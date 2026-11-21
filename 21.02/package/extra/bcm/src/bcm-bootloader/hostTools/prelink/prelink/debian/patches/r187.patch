@@ -1,0 +1,119 @@
+Description: Add some new DWARF definitions from the upstream r187
+Author: Andrey Rahmatullin <wrar@wrar.name>
+
+Index: b/src/dwarf2.c
+===================================================================
+--- a/src/dwarf2.c
++++ b/src/dwarf2.c
+@@ -295,8 +295,8 @@
+ }
+ 
+ static int
+-adjust_location_list (DSO *dso, unsigned char *ptr, size_t len,
+-		      GElf_Addr start, GElf_Addr adjust)
++adjust_location_list (DSO *dso, struct cu_data *cu, unsigned char *ptr,
++		      size_t len, GElf_Addr start, GElf_Addr adjust)
+ {
+   unsigned char *end = ptr + len;
+   unsigned char op;
+@@ -366,9 +366,20 @@
+ 	case DW_OP_const4u:
+ 	case DW_OP_const4s:
+ 	case DW_OP_call4:
+-	case DW_OP_call_ref:
+ 	  ptr += 4;
+ 	  break;
++	case DW_OP_call_ref:
++	  if (cu == NULL)
++	    {
++	      error (0, 0, "%s: DWARF DW_OP_call_ref shouldn't appear"
++		     " in .debug_frame", dso->filename);
++	      return 1;
++	    }
++	  if (cu->cu_version == 2)
++	    ptr += ptr_size;
++	  else
++	    ptr += 4;
++	  break;
+ 	case DW_OP_const8u:
+ 	case DW_OP_const8s:
+ 	  ptr += 8;
+@@ -393,6 +404,19 @@
+ 	    ptr += len;
+ 	  }
+ 	  break;
++	case DW_OP_GNU_implicit_pointer:
++	  if (cu == NULL)
++	    {
++	      error (0, 0, "%s: DWARF DW_OP_GNU_implicit_pointer shouldn't"
++		     " appear in .debug_frame", dso->filename);
++	      return 1;
++	    }
++	  if (cu->cu_version == 2)
++	    ptr += ptr_size;
++	  else
++	    ptr += 4;
++	  read_uleb128 (ptr);
++	  break;
+ 	default:
+ 	  error (0, 0, "%s: Unknown DWARF DW_OP_%d", dso->filename, op);
+ 	  return 1;
+@@ -461,8 +485,8 @@
+ }
+ 
+ static int
+-adjust_dwarf2_loc (DSO *dso, GElf_Addr offset, GElf_Addr base,
+-		   GElf_Addr start, GElf_Addr adjust)
++adjust_dwarf2_loc (DSO *dso, struct cu_data *cu, GElf_Addr offset,
++		   GElf_Addr base, GElf_Addr start, GElf_Addr adjust)
+ {
+   unsigned char *ptr, *endsec;
+   GElf_Addr low, high;
+@@ -505,7 +529,7 @@
+       len = read_16 (ptr);
+       assert (ptr + len <= endsec);
+ 
+-      if (adjust_location_list (dso, ptr, len, start, adjust))
++      if (adjust_location_list (dso, cu, ptr, len, start, adjust))
+ 	return 1;
+ 
+       ptr += len;
+@@ -564,7 +588,7 @@
+ 		  }
+ 		else
+ 		  {
+-		    if (adjust_dwarf2_loc (dso, addr, base, start, adjust))
++		    if (adjust_dwarf2_loc (dso, cu, addr, base, start, adjust))
+ 		      return NULL;
+ 		  }
+ 	      }
+@@ -654,7 +678,7 @@
+ 		case DW_AT_location:
+ 		case DW_AT_data_member_location:
+ 		case DW_AT_vtable_elem_location:
+-		  if (adjust_location_list (dso, ptr, len, start, adjust))
++		  if (adjust_location_list (dso, cu, ptr, len, start, adjust))
+ 		    return NULL;
+ 		  break;
+ 		default:
+@@ -942,7 +966,7 @@
+ 	      /* FALLTHROUGH */
+ 	    case DW_CFA_def_cfa_expression:
+ 	      len = read_uleb128 (ptr);
+-	      if (adjust_location_list (dso, ptr, len, start, adjust))
++	      if (adjust_location_list (dso, NULL, ptr, len, start, adjust))
+ 		return 1;
+ 	      ptr += len;
+ 	      break;
+Index: b/src/dwarf2.h
+===================================================================
+--- a/src/dwarf2.h
++++ b/src/dwarf2.h
+@@ -358,6 +358,7 @@
+ #define DW_OP_GNU_push_tls_address	0xe0
+ #define DW_OP_GNU_uninit		0xf0
+ #define DW_OP_GNU_encoded_addr		0xf1
++#define DW_OP_GNU_implicit_pointer	0xf2
+ #define DW_OP_lo_user			0xe0
+ #define DW_OP_hi_user			0xff
+ 

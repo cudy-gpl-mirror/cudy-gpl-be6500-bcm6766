@@ -1,0 +1,43 @@
+'\" t
+.\"
+.\" Copyright (c) 2015-2018 Linutronix GmbH All rights reserved.
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.TH MINICOREDUMPER_TRIGGER 1 "2016-09-08" "minicoredumper" "minicoredumper"
+.
+.SH NAME
+minicoredumper_trigger \- a tool to trigger dumps for all applications using
+.BR libminicoredumper (7).
+.
+.SH SYNOPSIS
+.B minicoredumper_trigger
+.I dump-directory
+.I dump-scope
+.
+.SH DESCRIPTION
+.B minicoredumper_trigger dumps data registered with
+.BR libminicoredumper (7)
+to the specified absolute path
+.IR dump-directory .
+Only data that was registered with a scope value less than or equal to the
+.I dump-scope
+will be dumped.
+.
+.SH NOTES
+In order to dump the registered data from applications based on
+.BR libminicoredumper (7),
+.B minicoredumper_trigger
+must have permissions to read the shared memory managed by
+.BR minicoredumper_regd (1)
+and permisssions to read the process memory of the applications. If some
+of these permissions are missing,
+.B minicoredumper_trigger
+will dump as much as it can.
+.
+.SH "SEE ALSO"
+.BR minicoredumper (1),
+.BR libminicoredumper (7),
+.BR minicoredumper_regd (1)
+.PP
+The DiaMon Workgroup: <http://www.diamon.org>

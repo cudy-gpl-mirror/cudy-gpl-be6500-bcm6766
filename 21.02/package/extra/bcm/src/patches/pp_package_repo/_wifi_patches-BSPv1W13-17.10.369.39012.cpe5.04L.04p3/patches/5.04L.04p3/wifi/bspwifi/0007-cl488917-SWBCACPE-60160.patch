@@ -1,0 +1,140 @@
+--- ./userspace/private/apps/wlan/scripts/wifi.sh
++++ ./userspace/private/apps/wlan/scripts/wifi.sh
+@@ -97,6 +97,7 @@
+             fi
+         fi
+         [[ $doapply -eq 1 ]] && dmcli eRT setv Device.WiFi.Radio.${dm_ifindex}.X_CISCO_COM_ApplySetting bool true
++        rm -rf /tmp/dpd_in_progress
+         return 0
+     fi
+     return 0
+--- ./userspace/private/apps/wlan/wldpdlib/wldpd.c
++++ ./userspace/private/apps/wlan/wldpdlib/wldpd.c
+@@ -93,6 +93,10 @@
+ #define WLDPD_RADIO_MODE_INV     'E'   /* un-initialized */
+ 
+ #define WLDPD_SCRIPT_FILE        "/etc/init.d/wifi.sh"
++#define GET_DPD_MODE 	0
++#define GET_ACSD_MODE 	1
++#define NOT_SET_ACSD 	0
++#define ALSO_SET_ACSD 	1
+ 
+ #define WLDPD_RADIO_ACS_MODE_VALID(mode)  \
+ 	(((mode) >= WLDPD_RADIO_MODE_ACS(0)) && ((mode) <= WLDPD_RADIO_MODE_ACS(9)))
+@@ -141,13 +145,17 @@
+ }
+ 
+ /* Get DPD radio interface mode from nvram if exists */
+-static inline char wldpd_radio_mode(unsigned char idx)
++static inline char wldpd_radio_mode(unsigned char idx, bool acsd)
+ {
+ 	char nvname[NVNAME_SIZE];
+ 	char *val;
+ 	char mode = WLDPD_RADIO_MODE_INV;
+ 
+-	snprintf(nvname, sizeof(nvname), "wl%d_dpd_mode", idx);
++	if (acsd) {
++		snprintf(nvname, sizeof(nvname), "wl%d_dpd_acsd_mode", idx);
++	} else {
++		snprintf(nvname, sizeof(nvname), "wl%d_dpd_mode", idx);
++	}
+ 	val = nvram_get(nvname);
+ 	if (val) {
+ 		mode = val[0];
+@@ -157,7 +165,7 @@
+ }
+ 
+ /* Set DPD radio interface mode into nvram */
+-static inline void wldpd_radio_mode_set(unsigned char idx, char mode)
++static inline void wldpd_radio_mode_set(unsigned char idx, char mode, bool acsd)
+ {
+ 	char nvname[NVNAME_SIZE];
+ 	char nvval[NVNAME_SIZE];
+@@ -166,7 +174,11 @@
+ 	snprintf(nvval, sizeof(nvval), "%c", mode);
+ 	nvram_set(nvname, nvval);
+ 	/* No need to be persistent, so no commit */
+-
++	if (acsd) {
++		snprintf(nvname, sizeof(nvname), "wl%d_dpd_acsd_mode", idx);
++		snprintf(nvval, sizeof(nvval), "%c", mode);
++		nvram_set(nvname, nvval);
++	}
+ 	return;
+ }
+ 
+@@ -211,7 +223,7 @@
+ 	unsigned char pwrdn = 0;
+ 
+ 	if (wldpd_radio_disabled(idx) &&
+-		(wldpd_radio_mode(idx) != WLDPD_RADIO_MODE_BIND)) {
++		(wldpd_radio_mode(idx, GET_DPD_MODE) != WLDPD_RADIO_MODE_BIND)) {
+ 		/* Configured to be power down and not in bind mode */
+ 		pwrdn = 1;
+ 	}
+@@ -370,7 +382,7 @@
+ 	 */
+ 	for (; idx < radio_nums; idx++) {
+ 		/* Initialize to invalid mode */
+-		wldpd_radio_mode_set(idx, WLDPD_RADIO_MODE_INV);
++		wldpd_radio_mode_set(idx, WLDPD_RADIO_MODE_INV, NOT_SET_ACSD);
+ 
+ 		if ((dpd_mode == WLDPD_MODE_EDPD) && (wldpd_radio_pwrdn(idx) == 1)) {
+ 
+@@ -382,7 +394,7 @@
+ 			}
+ 
+ 			/* Power down and disabled for configuration (bind mode) */
+-			wldpd_radio_mode_set(idx, WLDPD_RADIO_MODE_BIND);
++			wldpd_radio_mode_set(idx, WLDPD_RADIO_MODE_BIND, NOT_SET_ACSD);
+ 		}
+ 	}
+ #endif /* BUILD_BCM_WLAN_DPDCTL */
+@@ -434,12 +446,12 @@
+ 	 * kept in disabled mode during pre-init
+ 	 */
+ 	for (; idx < radio_nums; idx++) {
+-		if (wldpd_radio_mode(idx) ==  WLDPD_RADIO_MODE_BIND) {
++		snprintf(ifname, sizeof(ifname), "wl%d", idx);
++		if (wldpd_radio_mode(idx, GET_DPD_MODE) ==  WLDPD_RADIO_MODE_BIND) {
+ 			/* Lets make sure acsd and hsapd are ready before powering down */
+ 			wldpd_services_ready(idx);
+ 
+ 			/* remove interface and set radio mode to operative mode */
+-			snprintf(ifname, sizeof(ifname), "wl%d", idx);
+ 			wldpd_hotplug_handler(ifname, "pwrdn");
+ 
+ 			/* Power down the interface */
+@@ -449,10 +461,12 @@
+ 				WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+ 			}
+ 		}
++#ifdef RDK_BUILD
++		else {
++			wldpd_hotplug_handler(ifname, "pwrup");
+ 	}
+-#ifdef BCA_CPEROUTER_RDKWIFI
+-	system("rm -f /tmp/dpd_in_progress");
+ #endif
++	}
+ #endif /* BUILD_BCM_WLAN_DPDCTL */
+ 
+ 	return;
+@@ -501,7 +515,7 @@
+ 		adapter_up(radio_idx);
+ #endif /* BCA_CPEROUTER_RDKWIFI */
+ 		/* Restore back acs mode for the interface */
+-		acs_mode = wldpd_radio_mode(radio_idx);
++		acs_mode = wldpd_radio_mode(radio_idx, GET_ACSD_MODE);
+ 		if (WLDPD_RADIO_ACS_MODE_VALID(acs_mode)) {
+ 			snprintf(cmd, sizeof(cmd), "acs_cli2 -i %s mode %c 2>/dev/null",
+ 					ifname, acs_mode);
+@@ -567,7 +581,7 @@
+ 		snprintf(cmd, CMD_BUF_SIZE, "acs_cli2 -i %s mode", ifname);
+ 		if ((fp = popen(cmd, "r")) != NULL) {
+ 			if (fgets(buf, CMD_BUF_SIZE, fp) != NULL) {
+-				wldpd_radio_mode_set(radio_idx, buf[0]);
++				wldpd_radio_mode_set(radio_idx, buf[0], ALSO_SET_ACSD);
+ 			}
+ 			pclose(fp);
+ 		}

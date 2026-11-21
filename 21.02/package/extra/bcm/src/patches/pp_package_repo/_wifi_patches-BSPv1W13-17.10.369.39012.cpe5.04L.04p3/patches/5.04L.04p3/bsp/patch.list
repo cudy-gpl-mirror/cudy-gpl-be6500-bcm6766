@@ -1,0 +1,1 @@
+- {csp: CS00000000, ref: SWBCACPE-60461, chg: 489735 } -# MODULESDIR should be /lib64 when using 64B and /lib in 32bits mode.

@@ -1,0 +1,14 @@
+prelink.h.patch
+#ts.patch
+md5sha.patch
+init.patch
+fsync.patch
+#prelink.8.patch
+#cache.patch
+timestamp.patch
+r187.patch
+r188.patch
+r189.patch
+r190.patch
+open-with-mode.patch
+ftbfs-no-copy-dt-needed.patch

@@ -1,0 +1,409 @@
+--- ./userspace/private/apps/wlan/scripts/wifi.sh
++++ ./userspace/private/apps/wlan/scripts/wifi.sh
+@@ -22,6 +22,7 @@
+ readonly DPD_MODE_OFF=0
+ readonly DPD_MODE_DPD=1
+ readonly DPD_MODE_EDPD=2
++readonly DPD_MODE_EDPD_MLO=3
+ readonly DPD_EDPD_FILE="/usr/sbin/wifi_dsps.sh"
+ 
+ readonly MLC_SYNC=6
+@@ -266,6 +267,7 @@
+     if [ $mlc_state = $MLC_ACTIVE ]; then
+       echo "WIFI.SH : $ifname mlo up Success"
+     fi
++    touch /tmp/edpd_${ifname}_mloready
+   fi
+ }
+ 
+@@ -322,6 +324,95 @@
+   echo $domain
+ }
+ 
++# Wait for WiFi services down
++#
++# Input:
++#  $1: interface name (wlX)
++#
++# Return:
++#  None
++wledpdctl_wait_app_services_down()
++{
++  local ifname=$1;
++  local state;
++  local hapd_iflist;
++
++  hapd_iflist=$(hostapd_cli interface | grep ^${ifname})
++  if [ ! -z "$hapd_iflist" ]; then
++    # Interfaces exists
++    for ifname in $hapd_iflist; do
++      for i in $(seq 1 10); do
++        state=$(hostapd_cli -i $ifname status | grep state | cut -d '=' -f2)
++        if [ "$state" = "DISABLED" ] || [ -z "$state" ]; then
++          break
++        fi
++        sleep 1
++      done
++      if [ "$state" != "DISABLED" ] && [ ! -z "$state" ]; then
++        echo "WIFI.SH : WARN - $ifname hostapd not down, state $state"
++      fi
++    done
++  fi
++
++}
++
++# Wait for WiFi services up
++#
++# Input:
++#  $1: interface name (wlX)
++#
++# Return:
++#  None
++wledpdctl_wait_app_services_up()
++{
++  local ifname=$1;
++  local hifname;
++  local state;
++  local hapd_iflist;
++
++  # Wait for interface to appear in the hostapd list
++  for i in $(seq 1 20); do
++    hapd_iflist=$(hostapd_cli interface | grep ^${ifname} | tr '\n' ' ');
++    if [ ! -z "$hapd_iflist" ]; then
++      break
++    fi
++    sleep 1;
++  done
++
++  if [ -z "$hapd_iflist" ]; then
++    echo "WIFI.SH : WARN - $ifname no hostapd interfaces after $i sec";
++  fi
++
++  # For each interface, wait until interface is enabled
++  for hifname in $hapd_iflist; do
++    for i in $(seq 1 60); do
++      state=$(hostapd_cli -i $hifname status | grep state | cut -d '=' -f2);
++      if [ "$state" = "ENABLED" ] || [ "$state" = "DFS" ]; then
++        break
++      fi
++      sleep 1;
++    done
++    if [ "$state" != "ENABLED" ] && [ "$state" != "DFS" ]; then
++      echo "WIFI.SH : WARN - $hifname hostapd not up, [$state] after $i sec";
++    fi
++  done
++
++  # Wait for application services to call mlo_up
++  if [ $wldpdmode = $DPD_MODE_EDPD_MLO ]; then
++    for i in $(seq 1 60); do
++      if [ -f /tmp/edpd_${ifname}_mloready ]; then
++        break
++      fi
++	  sleep 1;
++    done
++
++    if [ ! -f /tmp/edpd_${ifname}_mloready ]; then
++      echo "WIFI.SH : WARN - $ifname mlo services not ready yet after $i sec";
++    fi
++  fi
++}
++
++
+ # Set interface number for the given domain number in the EDPD map
+ #
+ # Input:
+@@ -540,7 +631,7 @@
+   local pcie_base=
+ 
+   [[ ! -z $IS_RDK_BUILD ]]  && [[ $RDK_EDPD_SUPPORT -eq 0 ]] && return 0
+-  if [ $wldpdmode = $DPD_MODE_EDPD ]; then
++  if [ $wldpdmode -ge $DPD_MODE_EDPD ]; then
+       domain=$(wledpdctl_get_map $ifname)
+     if [ $domain != $INV_DOMAIN ]; then
+ 
+@@ -550,23 +641,16 @@
+         # Check if the interface already up and running
+         sts=`cat /proc/interrupts | grep $ifname | cut -d ':' -f1`
+         if [[ -d $SYS_PCIE_DRV_DIR/$pcie_base ]] && [[ ! -z $sts ]]; then
+-          [[ -z $IS_RDK_BUILD ]] && [[ $wledpdappupd != 0 ]] && \
+-              ACTION=pwrdn /etc/init.d/mdev_wl.sh $ifname
+ 
+-          # Wait until all services are down before doing anything with PCIe
+-          hapd_state=$(hostapd_cli interface | grep ^${ifname})
+-          if [ ! -z $hapd_state ]; then
+-            # Interface exists
+-            for i in $(seq 1 10); do
+-              hapd_state=$(hostapd_cli -i $ifname status | grep state | cut -d '=' -f2)
+-              if [ "$hapd_state" = "DISABLED" ]; then
+-                break
+-              fi
+-              sleep 1
+-            done
+-          fi
+-          if [ "$hapd_state" != "DISABLED" ]; then
+-            echo "WIFI.SH : WARN - $ifname hostapd not down, state $hapd_state"
++          # Down WiFi services for this interface
++          if [ $wledpdappupd != 0 ]; then
++            if [ -z $IS_RDK_BUILD ]; then
++              ACTION=pwrdn /etc/init.d/mdev_wl.sh $ifname;
++            else
++              rdkb_radio_control $ifname "down";
++            fi
++            # Wait until wifi services are disabled/terminated
++            wledpdctl_wait_app_services_down $ifname;
+           fi
+ 
+           # Save affinity (if any)
+@@ -600,7 +684,7 @@
+   local pcie_base=
+ 
+   [[ ! -z $IS_RDK_BUILD ]]  && [[ $RDK_EDPD_SUPPORT -eq 0 ]] && return 0
+-  if [ $wldpdmode = $DPD_MODE_EDPD ]; then
++  if [ $wldpdmode -ge $DPD_MODE_EDPD ]; then
+     domain=$(wledpdctl_get_map $ifname)
+     if [ $domain != $INV_DOMAIN ]; then
+       pcie_base=$(wledpdctl_get_pcie_base $domain)
+@@ -625,9 +709,18 @@
+           # Restore back affinity
+           wledpdctl_wlaffinity_up $ifname
+ 
++          # Bring up WiFi services for this interface
+           [[ -n $IS_RDK_BUILD  ]] && nvram unset ${ifname}_edpd_radio
+-          [[ -z $IS_RDK_BUILD ]] && [[ $wledpdappupd != 0 ]] && \
+-              ACTION=pwrup /etc/init.d/mdev_wl.sh $ifname
++          if [ $wledpdappupd != 0 ]; then
++            rm -f /tmp/edpd_${ifname}_mloready
++            if [ -z $IS_RDK_BUILD ]; then
++              ACTION=pwrup /etc/init.d/mdev_wl.sh $ifname;
++            else
++              rdkb_radio_control $ifname "up";
++            fi
++            # Wait until wifi services are up and running
++            wledpdctl_wait_app_services_up $ifname;
++          fi
+         fi
+       fi
+     fi
+@@ -656,7 +749,6 @@
+     dpd=$(nvram kget ${ifname}_dpd)
+     if [ ! -z $dpd ]; then
+       if [ $dpd = 1 ]; then
+-        rdkb_radio_control $ifname "down"
+         wledpdctl_unbind $ifname
+       else
+         domain=$(wledpdctl_get_map $ifname)
+@@ -674,7 +766,6 @@
+             fi
+           fi
+           wledpdctl_bind $ifname
+-          rdkb_radio_control $ifname "up"
+         fi
+       fi
+     fi
+@@ -700,7 +791,7 @@
+   else
+     nvram kcommit
+     nvram commit
+-    if [ $wldpdmode = $DPD_MODE_EDPD ]; then
++    if [ $wldpdmode -ge $DPD_MODE_EDPD ]; then
+       wledpdctl_restart
+     else
+       wl_suspend
+@@ -732,7 +823,7 @@
+     done
+   fi
+ 
+-  if [ $wldpdmode != $DPD_MODE_EDPD ]; then
++  if [ $wldpdmode -lt $DPD_MODE_EDPD ]; then
+     nvram kset pcie_apon=0x$hex_v
+   fi
+ }
+@@ -778,7 +869,7 @@
+     else
+       A_WLIFL="wl0 wl1 wl2 wl3"
+     fi
+-    if [ $wldpdmode = $DPD_MODE_EDPD ]; then
++    if [ $wldpdmode -ge $DPD_MODE_EDPD ]; then
+       wledpdmap=$(nvram kget wl_radio_to_ifid_map)
+       if [ -z $wledpdmap ]; then
+         echo "Auto switching to EDPD mode"
+@@ -1070,6 +1161,10 @@
+     grep -e bcm_pcie_hcd /etc/init.d/bcm-base-drivers.sh | sh
+   fi
+ 
++  if [ $mode = $DPD_MODE_EDPD ] && [ $wl_mlo_mapunit != -1 ]; then
++    mode=$DPD_MODE_EDPD_MLO;
++  fi
++
+   echo $mode
+ }
+ 
+@@ -1088,11 +1183,10 @@
+       ;;
+ 
+     $DPD_MODE_EDPD)
+-      if [ $wl_mlo_mapunit != -1 ]; then
+-        modestr="EDPD_MLO"
+-      else
+         modestr="EDPD    "
+-      fi
++      ;;
++    $DPD_MODE_EDPD_MLO)
++        modestr="EDPD_MLO"
+       ;;
+ 
+     *)
+@@ -1233,7 +1327,7 @@
+     wldpdctl_init
+     if [ -z $upintf ]; then
+       wl_usage
+-    elif [ $wldpdmode = $DPD_MODE_EDPD ]; then
++    elif [ $wldpdmode -ge $DPD_MODE_EDPD ]; then
+       wledpdappupd=0
+       wledpdctl_bind $upintf
+     else
+@@ -1246,7 +1340,7 @@
+     wldpdctl_init
+     if [ -z $dnintf ]; then
+       wl_usage
+-    elif [ $wldpdmode = $DPD_MODE_EDPD ]; then
++    elif [ $wldpdmode -ge $DPD_MODE_EDPD ]; then
+       wledpdappupd=0
+       wledpdctl_unbind $dnintf
+     else
+--- ./userspace/private/apps/wlan/wldpdlib/wldpd.c
++++ ./userspace/private/apps/wlan/wldpdlib/wldpd.c
+@@ -80,7 +80,8 @@
+ #define WLDPD_MODE_OFF           0    /* DPD Off */
+ #define WLDPD_MODE_DPD           1    /* DPD On */
+ #define WLDPD_MODE_EDPD          2    /* Enhanced DPD On */
+-#define WLDPD_MODE_MAX           3    /* Mode Delimiter */
++#define WLDPD_MODE_EDPD_MLO      3    /* Enhanced DPD On with MLO */
++#define WLDPD_MODE_MAX           4    /* Mode Delimiter */
+ #define WLDPD_MODE_INV           (-1) /* Invalid Mode */
+ 
+ /*
+@@ -384,7 +385,7 @@
+ 		/* Initialize to invalid mode */
+ 		wldpd_radio_mode_set(idx, WLDPD_RADIO_MODE_INV, NOT_SET_ACSD);
+ 
+-		if ((dpd_mode == WLDPD_MODE_EDPD) && (wldpd_radio_pwrdn(idx) == 1)) {
++		if ((dpd_mode >= WLDPD_MODE_EDPD) && (wldpd_radio_pwrdn(idx) == 1)) {
+ 
+ 			/* Power up and keep it in disabled mode */
+ 			snprintf(cmd, sizeof(cmd), "sh %s edpdbind wl%d",
+@@ -415,6 +416,7 @@
+ 	char ifname[IFNAME_LENGTH] = {0};
+ 	int  radio_nums = act_wl_cnt;
+ 	int  rc, idx = WLDPD_ALL_RADIOS;
++	int  dpd_mode = wldpd_mode();
+ 
+ 	if (if_name) {
+ 		rc = sscanf(if_name, "wl%d", &idx);
+@@ -435,10 +437,13 @@
+ 
+ 	WLDPD_LOG(" %s\n", __FUNCTION__);
+ 
+-	/* Bring up MLO (if not done before) */
+-	snprintf(cmd, sizeof(cmd), "sh %s edpdmloup wl%d", WLDPD_SCRIPT_FILE, idx);
+-	if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-		WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++	if (dpd_mode == WLDPD_MODE_EDPD_MLO) {
++		/* Bring up MLO (if not done before) */
++		snprintf(cmd, sizeof(cmd), "sh %s edpdmloup wl%d", WLDPD_SCRIPT_FILE,
++			idx);
++		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		}
+ 	}
+ 
+ 	/*
+@@ -487,6 +492,7 @@
+ 	bool pwrdn_event;
+ 	unsigned char radio_idx;
+ 	int rc;
++	int  dpd_mode = wldpd_mode();
+ 
+ 	sscanf(ifname, "wl%d", &rc);
+ 	radio_idx = rc;
+@@ -534,20 +540,28 @@
+ 
+ #if  defined(CONFIG_HOSTAPD) && !defined(BCA_CPEROUTER_RDKWIFI)
+ 		/* Add radio interface from hostapd */
+-		snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s enable 2>/dev/null",
+-			ifname);
+-		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+-		}
+-
+-		wldpd_services_ready(radio_idx);
++		if (dpd_mode == WLDPD_MODE_EDPD_MLO) {
+ 
++			snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s enable 2>/dev/null",
++				ifname);
++			if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++				WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++			}
++			wldpd_services_ready(radio_idx);
++		} else {
++			if ((rc = start_hapd_wpasupp_per_radio(radio_idx)) != 0) {
++				WLDPD_ERROR("start_hapd_radio<%d> failed with rc=%d",
++					radio_idx, rc);
++			}
++		}
+ #endif /* !BCA_CPEROUTER_RDKWIFI && CONFIG_HOSTAPD */
+ 
+-		snprintf(cmd, sizeof(cmd), "sh %s edpdmloup wl%d", WLDPD_SCRIPT_FILE,
+-			radio_idx);
+-		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		if (dpd_mode == WLDPD_MODE_EDPD_MLO) {
++			snprintf(cmd, sizeof(cmd), "sh %s edpdmloup wl%d",
++				WLDPD_SCRIPT_FILE, radio_idx);
++			if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++				WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++			}
+ 		}
+ 
+ 		return 0;
+@@ -558,11 +572,13 @@
+ 
+ 		WLDPD_LOG(" %s: %s %s\n", __FUNCTION__, ifname, action);
+ 
+-		/* First down MLO if applicable */
+-		snprintf(cmd, sizeof(cmd), "sh %s edpdmlodn wl%d", WLDPD_SCRIPT_FILE,
+-			radio_idx);
+-		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		if (dpd_mode == WLDPD_MODE_EDPD_MLO) {
++			/* First down MLO if applicable */
++			snprintf(cmd, sizeof(cmd), "sh %s edpdmlodn wl%d",
++				WLDPD_SCRIPT_FILE, radio_idx);
++			if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++				WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++			}
+ 		}
+ 
+ 		/*
+@@ -649,12 +665,16 @@
+ 
+ #ifdef CONFIG_HOSTAPD
+ 		/* Remove radio interface from hostapd */
+-		snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s disable 2>/dev/null",
+-			ifname);
+-		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		if (dpd_mode == WLDPD_MODE_EDPD_MLO) {
++			snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s disable 2>/dev/null",
++				ifname);
++			if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++				WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++			}
++		} else {
++			stop_hapd_wpasupp_per_radio(radio_idx);
+ 		}
+-#endif
++#endif /* CONFIG_HOSTAPD */
+ #endif /* BCA_CPEROUTER_RDKWIFI */
+ 		return 0;
+ 	}

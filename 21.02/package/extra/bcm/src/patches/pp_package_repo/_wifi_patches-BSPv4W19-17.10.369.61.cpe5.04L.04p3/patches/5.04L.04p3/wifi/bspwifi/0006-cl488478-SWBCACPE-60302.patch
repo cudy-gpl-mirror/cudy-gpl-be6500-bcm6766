@@ -1,0 +1,64 @@
+--- ./userspace/private/apps/wlan/unfnvram/nvram_cmd.c
++++ ./userspace/private/apps/wlan/unfnvram/nvram_cmd.c
+@@ -47,14 +47,14 @@
+  *
+  ************************************************************************/
+ 
+-#include <bcmnvram.h>
++#include <string.h>
+ #include <ctype.h>
+ #include <stdio.h>
+ #include <stdlib.h>
+-#include <string.h>
+ #include <typedefs.h>
+ #include <unistd.h>
+ 
++#include "bcmnvram.h"
+ #include "nvram_debug.h"
+ #include "nvram_api.h"
+ #include "nvram_utils.h"
+@@ -234,7 +234,7 @@
+ 	}
+ 	else
+ 	{
+-		printf("invalid filename: %s\n", file_name);
++		printf("file_name is NULL!");
+ 		ret = -1;
+ 	}
+ 	return ret;
+--- ./userspace/private/apps/wlan/unfnvram/nvram_common.c
++++ ./userspace/private/apps/wlan/unfnvram/nvram_common.c
+@@ -54,6 +54,7 @@
+ #include <bcmnvram.h>
+ #include "nvram_netlink.h"
+ #include "nvram_api.h"
++#include "nvram_utils.h"
+ 
+ #define VALIDATE_BIT(bit) do { if ((bit < 0) || (bit > 31)) return NULL; } while (0)
+ #define VALIDATE_BIT_INT(bit) do { if ((bit < 0) || (bit > 31)) return 0; } while (0)
+@@ -282,7 +283,7 @@
+ 	}
+ 	else
+ 	{
+-		printf("invalid filename: %s\n", file_name);
++		printf("file_name is NULL!\n");
+ 		ret = -1;
+ 	}
+ 	return ret;
+--- ./userspace/private/apps/wlan/unfnvram/nvram_utils.c
++++ ./userspace/private/apps/wlan/unfnvram/nvram_utils.c
+@@ -51,12 +51,13 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ 
+-#include <nvram_utils.h>
++#include "nvram_utils.h"
+ 
+ 
+ char* trim_str(char *value)
+ {
+ 	char *in_str = value;
++
+ 	if (!in_str || strlen(in_str) == 0)
+ 		return in_str;
+ 	else {

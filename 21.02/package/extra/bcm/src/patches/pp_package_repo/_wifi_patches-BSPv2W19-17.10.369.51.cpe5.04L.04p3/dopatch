@@ -1,0 +1,71 @@
+#!/bin/bash
+#script run either from top or from internal patches(internal)
+if [[ -d ./patches ]]; then
+    source ./version.make
+else
+    source ../version.make
+fi
+g_bsp_rel_version="$BRCM_VERSION"."$BRCM_RELEASE"L."$BRCM_EXTRAVERSION"
+
+PP_LTGRAY='\033[0;37m'
+PP_NC='\033[0m' # No Color==
+
+function help() {
+    echo " ####################   BRCM PATCHING UTILTIY ##############################"
+    echo "  Run this script to patch BRCM source"
+    printf "\n  - ${PP_LTGRAY}dopatch check:${PP_NC} check source's current patch status.\n\n"
+    echo "       # before any patches, this command is used to check if current source "
+    echo "       # is in good patched condition and show current patch version. If new"
+    echo "       # patch package has just been extracted and not patched yet, it will"
+    echo "       # also help to check if the new patches are newer than current patches."
+    printf "\n  - ${PP_LTGRAY}dopatch apply:${PP_NC} Apply all patches.\n\n"
+    echo "       # After all patches are successfully applied, the patches dir $g_bsp_rel_version"
+    echo "       # under patches dir won't be needed any more. The files being touched"
+    echo "       # will show when running this command, those files need to be checked"
+    echo "       # into your source control"
+    printf "\n  - ${PP_LTGRAY}dopatch snapshot${PP_NC} snapshot current patches and status.\n\n"
+    echo "       # make a snapshot of current patches and patching status for patching"
+    echo "       # failure investigation."
+    printf "\n  - ${PP_LTGRAY}dopatch list:${PP_NC} List all ${PP_LTGRAY}new${PP_NC} patch files to be applied.\n\n"
+    echo "       # Nothing should shows up after patch has been applied."
+    echo "       # if there are still files shows, it means these patches may"
+    echo "       # not be applied successfully. Thus these patches should be "
+    echo "       # checked and manually applied. If the diffs are not obvious,"
+    echo "       # Contact BRCM's support team."
+    echo -e "\n###########################################################################"
+    exit
+}
+
+function unset_global() {
+    unset g_brcm_list_patches_only
+    unset g_brcm_jenkin_rel_bld
+    unset g_brcm_no_revert
+}
+_brcm_no_revert=0;
+
+unset_global
+set -- `getopt hr $*`
+while [ $# -gt 0 ]
+do
+ case "$1" in
+     (-r) export _brcm_no_revert=1 ;;
+     (-h) help; exit;;
+     (--) shift ; break;;
+ esac
+ shift
+done
+
+if [[ $# -gt 0 ]]; then
+    supported_command=( "apply" "list" "check" "snapshot")
+    for cmd in ${supported_command[@]};do
+        if [[ $1 =~ $cmd ]]; then
+            [[ -d patches ]] && cd patches
+            [[ $1 =~ apply && $_brcm_no_revert -eq 1 ]] && export g_brcm_no_revert=1
+            [[ $1 == "list" ]] && export g_brcm_list_patches_only=1
+            ./utility.sh $1 $2
+        fi
+    done
+else
+    help
+fi
+unset_global

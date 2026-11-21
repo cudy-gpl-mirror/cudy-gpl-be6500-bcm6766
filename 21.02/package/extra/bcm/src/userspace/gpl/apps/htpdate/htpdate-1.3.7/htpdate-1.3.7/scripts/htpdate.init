@@ -1,0 +1,61 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides:          htpdate
+# Required-Start:    $network $remote_fs $syslog
+# Required-Stop:     $network $remote_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: htpdate time synchronization
+# Description:       htpdate is a time synchronization daemon
+### END INIT INFO
+
+NAME="htpdate"
+DAEMON="/usr/sbin/${NAME}"
+PIDFILE="/var/run/${NAME}.pid"
+
+HTPDATE_ARGS="-s -t https://www.example.com"
+test -r "/etc/default/$NAME" && . "/etc/default/$NAME"
+
+start() {
+	printf 'Starting %s: ' "$NAME"
+	# shellcheck disable=SC2086 # we need the word splitting
+	start-stop-daemon -S -q -x "$DAEMON" \
+		-- -D -i "$PIDFILE" $HTPDATE_ARGS
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		echo "OK"
+	else
+		echo "FAIL"
+	fi
+	return "$status"
+}
+
+stop() {
+	printf 'Stopping %s: ' "$NAME"
+	start-stop-daemon -K -q -p "$PIDFILE"
+	status=$?
+	if [ "$status" -eq 0 ]; then
+		rm -f "$PIDFILE"
+		echo "OK"
+	else
+		echo "FAIL"
+	fi
+	return "$status"
+}
+
+restart() {
+	stop
+	start
+}
+
+case "$1" in
+	start|stop|restart)
+		"$1";;
+	reload)
+		# Restart, since there is no true "reload" feature.
+		restart;;
+	*)
+		echo "Usage: $0 {start|stop|restart|reload}"
+		exit 1
+esac

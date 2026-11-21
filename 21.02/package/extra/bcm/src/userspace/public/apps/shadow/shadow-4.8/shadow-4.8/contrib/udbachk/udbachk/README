@@ -1,0 +1,49 @@
+This is a helpme for udbachk version 0.11
+-----------------------------------------
+Could someone give me a little help with the following
+questions:
+
+1   Where I can get a standard for passwd and group?
+2   Shadow standard would also be nice to have.
+2.1 Is there a shadow standard?
+2.2 If not, should somebody do one?
+3   Does my program work on other systems (besides linux)?
+3.1 If not what should be done with it?
+
+Readme part of this file
+------------------------
+I know, my source code looks terrible. But it works at least
+(so I hope). I have to do a list of some kind to act as a
+way to reduce output verbosity.
+
+If you modify or rewrite this program please let me hear.
+I'd like to hear hints and tips what should be done better
+or differently.
+
+To check that you have good source code give following
+command. If everything is fine you will get two identical
+lines.
+
+prompt> grep "  udbachk.c" README; md5sum udbachk.c
+9949b33e085e859bd8c99994246ede71  udbachk.c
+
+Janne's comments
+----------------
+Sami really wrote most of the program. I just gave some
+hints and made some suggestions. If you have something to
+ask, feel free to contact either of us, but the credits of
+this program should go to him. I would never have done
+something like this on my own. I'm too busy with my own
+programs :-)
+
+Contact information
+-------------------
+address	Sami Kerola		Janne Riihijärvi
+	Ollinkeha 8 H 96
+	92120 RAAHE
+	FINLAND
+
+email	kerolasa@iki.fi		jariihij@mail.student.oulu.fi
+phone	+358 40 5832235
+
+- EOF -

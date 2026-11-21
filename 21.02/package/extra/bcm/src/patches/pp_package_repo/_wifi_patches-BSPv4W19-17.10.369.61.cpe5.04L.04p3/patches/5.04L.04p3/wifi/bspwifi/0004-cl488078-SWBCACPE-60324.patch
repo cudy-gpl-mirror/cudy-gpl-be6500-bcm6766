@@ -1,0 +1,55 @@
+--- ./userspace/private/apps/wlan/scripts/wlinc.sh
++++ ./userspace/private/apps/wlan/scripts/wlinc.sh
+@@ -1210,6 +1210,41 @@
+         done
+     done
+ }
++
++# xBow systems have 2 internal NIC radios, one of which requires
++# extra processing power (~ 1.5 CPUs) to sustain peak forwarding
++# performance. This is the "first" internal NIC on both 6765 and
++# 6766. That is: 6G@320Mhz for 6765; and 5G@160Mhz for 6766.
++#
++# We locate the cpu/unit for this cpu with extra processing
++# demand and steal half a CPU from the radio/uni with the
++# lowest processing demand.
++#
++# So what's the unit with the lowest processing demand?
++# => dual radio, it's the 'free' cpu (CPU #3)
++# => tri radio w/ dongle, it's the dongle radio (CPU #1)
++# => tri radio all nic, 2G external (CPU #3)
++extra_cpu_for_xBow()
++{
++	is_dhd_radio=$(isDHDRadio 0)
++
++	if [ $is_dhd_radio -eq 1 ]; then
++		extra_cpu_affinity=6 # cpu 1 + cpu 2
++		xbow_fwq_unit=1
++	else
++		# cpu 3 is either free or 2G or external
++		extra_cpu_affinity=10 # cpu 3 + cpu 1
++		xbow_fwq_unit=0
++	fi
++
++	proc_name=$(get_process_name "xbow_fwq" $xbow_fwq_unit);
++	proc_pid=$(getPidByName $proc_name);
++
++	if [ $proc_pid -gt 0 ]; then
++		setProcAffinity "" $proc_name $proc_pid $extra_cpu_affinity
++	fi
++}
++
+ # All SDK housekeeping processes:                      CPU0
+ # All processes/interrupts related to Internal WiFi#0: CPU1
+ # All processes/interrupts related to Internal WiFi#1: CPU2
+@@ -1294,6 +1329,10 @@
+         fi
+     done
+ 
++    if [ -n "$CROSSBOWFOL" ]; then
++	    extra_cpu_for_xBow
++    fi
++
+     # Set xbow_socket affinities but can't do it here, because these are
+     # registered with the kernel only after bcm_enet.ko is loaded and calls
+     # archer_driver_host_config(). So launch a background task to check for

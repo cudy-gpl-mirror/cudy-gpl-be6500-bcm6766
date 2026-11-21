@@ -1,0 +1,238 @@
+
+minicoredumper Release Notes
+============================
+
+2.0.6 (2023-06-24)
+
+    * Support comm names with spaces.
+
+    * Known problems:
+
+        - If tar is active, core files larger than 8GB will be
+          truncated. If it is known that the core files will be >8GB and
+          the full core file is needed, tar must be disabled.
+
+2.0.5 (2023-06-22)
+
+    * Also dump write-only memory segments.
+
+    * Known problems:
+
+        - If tar is active, core files larger than 8GB will be
+          truncated. If it is known that the core files will be >8GB and
+          the full core file is needed, tar must be disabled.
+
+2.0.4 (2023-04-25)
+
+    * Abort memory read if the crashed program is killed while the
+      minicoredumper is actively reading memory. This fixes a possible
+      endless loop in said scenario.
+
+    * Known problems:
+
+        - If tar is active, core files larger than 8GB will be
+          truncated. If it is known that the core files will be >8GB and
+          the full core file is needed, tar must be disabled.
+
+2.0.3 (2023-02-11)
+
+    * Dump zero-blocks as 4KB blocks instead of single bytes to speed up
+      piping to the compressor. (Only relevant if tar is not used.)
+
+    * Drop core data exceeding the ustar 8GB limit. The core file is
+      appropriately truncated and the actions are logged. This fixes tar
+      file corruption for core files >8GB.
+
+    * Known problems:
+
+        - If tar is active, core files larger than 8GB will be
+          truncated. If it is known that the core files will be >8GB and
+          the full core file is needed, tar must be disabled.
+
+2.0.2 (2022-11-30)
+
+    * Fix failed cross-configuring relating to autoconf and rpl_malloc.
+
+    * Fix core dumps for programs with huge amounts of ELF headers.
+
+    * Fix core dumps when requested to dump maps with no permissions, such
+      as [vvar].
+
+    * Fix core dumps when requested to dump maps of files, such as
+      libraries.
+
+    * Add proper return code handling for all i/o functions.
+
+    * Add large file support to coreinject.
+
+    * Set the maximum value (0x7fffffff) in kernel.core_pipe_limit
+      from the init script.
+
+    * Update autoconf for version 2.71. (2.69 is left as the minimum
+      because it is the version used on Debian/buster and is compatible
+      with these changes.)
+
+    * Do not try to invoke a compressor that was specified as an empty
+      string.
+
+    * Use new POSIX function pthread_mutexattr_setrobust() instead of
+      pthread_mutexattr_setrobust_np().
+
+    * Update documentation URLs to issue tracker and git repository.
+
+2.0.1 (2018-07-16)
+
+    * Use the SPDX format to specify all licenses.
+
+    * Update documentation.
+
+    * Fix various compiler warnings.
+
+    * Using mktemp(1) instead of tempfile(1) for temporary files.
+
+    * Reassign copyright of all files as requested by Ericsson AB and
+      agreed by Linutronix GmbH.
+
+    * Fix compile error on x32 architecture.
+
+    * Add README files for Debian and openembedded distributions.
+
+    * Known problems:
+
+        - broken for 32-bit applications using more than 2GB memory
+
+        - unable to dump libraries if they are linked using relative paths
+
+2.0.0 (2016-11-30)
+
+    * Re-license public domain files as BSD-2-clause.
+
+    * Replace libjson.a with libjson-c.
+
+    * Improve autotool usage to provide a complete installation.
+
+    * Add support for finding symbols in stripped binaries.
+
+    * Relocate administration binaries to sbin directory.
+
+    * API function arguments rearranged for a more intuitive ordering.
+
+    * Add "ident" option to buffers for external dumps.
+
+    * Remove minicoredumper_dbusd and all D-Bus and inotify functionality.
+      This has been replaced by the minicoredumper_regd service.
+
+    * Add minicoredumper_regd service to track libminicoredumper-based
+      application registrations.
+
+    * Dumps now stored in PID subdirectories.
+
+    * coreinject updates custom ELF section in core file.
+
+    * Add support for custom data injecting with coreinject.
+
+    * Add MCD_DATA_NODUMP option for binary dumps.
+
+    * Use pkg-config to check for libelf.
+
+    * Add compile-time checks for API format arguments.
+
+    * Change text dump API to match scanf() syntax.
+
+    * Fix printing of "%%" in text dump strings.
+
+    * For sparseness, rely on shared memory rather than filesystems.
+
+    * Fix possible trailing data in tar file.
+
+    * Add custom ELF section to core file that lists the dumps.
+
+    * Fix dumping when dump occupies multiple VMA's.
+
+    * Known problems:
+
+        - broken for 32-bit applications using more than 2GB memory
+
+        - unable to dump libraries if they are linked using relative paths
+
+1.0.2 (2015-11-30)
+
+    * Add inotify-based notification method.
+
+    * Known problems:
+
+        - broken for 32-bit applications using more than 2GB memory
+
+        - unable to dump libraries if they are linked using relative paths
+
+        - minicoredumper_dbusd does not know if registered applications
+          exit without unregistering
+
+1.0.1 (2015-11-03)
+
+    * Change dump base template to more human-friendly format.
+
+    * Add support for wrapping core file in tarball.
+
+    * Add support for core file compression.
+
+    * Add minicoredumper_trigger tool.
+
+    * libminicoredumper now dumps some /proc data.
+
+    * Dump syslog messages to debug.txt if write_debug_log is enabled.
+
+    * Check for pkg-config with configure.
+
+    * Add support for C++.
+
+    * Dump all thread info.
+
+    * Dump all auxv phdrs and dyns.
+
+    * Add compatibility layer for glib <2.36.
+
+    * Lock current memory.
+
+    * Fix support for Position Independent Executables (PIE).
+
+    * Fix dumping maps when no buffers specified.
+
+    * Fix values returned by `pkg-config --libs minicoredumper`.
+
+    * Fix possible accidental VMA truncation.
+
+    * Fix incomplete copying of /proc file content.
+
+    * Fix crash when trying to read invalid memory.
+
+    * Fix crash in libminicoredumper exit when minicoredumper_dbusd is not
+      available.
+
+    * Fix compiler warnings.
+
+    * Cosmetic function/parameter naming cleanup.
+
+    * Known problems:
+
+        - broken for 32-bit applications using more than 2GB memory
+
+        - unable to dump libraries if they are linked using relative paths
+
+        - minicoredumper_dbusd does not know if registered applications
+          exit without unregistering
+
+1.0.0 (2015-06-01)
+
+    * Initial release.
+
+    * Known problems:
+
+        - support for Position Independent Executables (PIE) is incomplete
+
+        - broken for 32-bit applications using more than 2GB memory
+
+        - unable to dump libraries if they are linked using relative paths
+
+        - minicoredumper_dbusd does not know if registered applications
+          exit without unregistering

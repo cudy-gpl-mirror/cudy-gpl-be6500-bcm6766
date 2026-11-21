@@ -1,0 +1,18 @@
+Description: Fix open() call to include mode, as required by O_CREAT
+Author: Ben Collins <bcollins@ubuntu.com>
+Forwarded: no
+Last-Update: 2013-05-08
+
+Index: b/m4/libelf.m4
+===================================================================
+--- a/m4/libelf.m4
++++ b/m4/libelf.m4
+@@ -73,7 +73,7 @@
+   Elf64_Addr val;
+   Elf_Scn *scn;
+ 
+-  fd = open ("conflibelftest", O_RDWR | O_CREAT | O_EXCL); if (fd == -1) exit (1);
++  fd = open ("conflibelftest", O_RDWR | O_CREAT | O_EXCL, 0644); if (fd == -1) exit (1);
+   unlink ("conflibelftest");
+   if (write (fd, sparc64_elf, sizeof(sparc64_elf)) != sizeof(sparc64_elf))
+     exit (1);

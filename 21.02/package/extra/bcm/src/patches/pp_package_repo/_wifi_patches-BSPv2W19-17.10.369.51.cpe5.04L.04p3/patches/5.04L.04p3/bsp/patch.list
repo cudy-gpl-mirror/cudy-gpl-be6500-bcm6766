@@ -1,0 +1,3 @@
+- {csp: CS00000000, ref: SWBCACPE-60461, chg: 489735 } -# MODULESDIR should be /lib64 when using 64B and /lib in 32bits mode.
+- {csp: CS00000000, ref: SWBCACPE-60912, chg: 495077 } -# fix compiling error "WL_MAX_NUM_SSID" redefined when -Werror in CFLAGS.
+- {csp: CS00000000, ref: SWBCACPE-61059, chg: 495593 } -# Fix the binary compat issue in customer builds (6764L & 6765)

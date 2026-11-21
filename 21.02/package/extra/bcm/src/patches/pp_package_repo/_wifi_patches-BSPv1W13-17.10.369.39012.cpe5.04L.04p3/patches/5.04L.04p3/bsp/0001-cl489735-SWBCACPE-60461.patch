@@ -1,0 +1,19 @@
+--- ./userspace/public/libs/openssl/Makefile
++++ ./userspace/public/libs/openssl/Makefile
+@@ -18,6 +18,7 @@
+ PATCHES_TO_APPLY := # Patches will be appended if needed
+ CRYPTO_ENGINES_TO_LOAD := # Engines will be appended if needed
+ ENGINESDIR = /lib$(if $(filter $(USER_ARCH),aarch64),64)/ssl/engines/
++MODULESDIR = /lib$(if $(filter $(USER_ARCH),aarch64),64)
+ 
+ PATCH_COMPLETE_FILE = .patch_complete
+ UNTAR_COMPLETE_FILE = .untar_complete
+@@ -150,7 +151,7 @@
+ endif
+ 
+ all: $(APP)/$(CONFIG_ID_FILE)
+-	$(MAKE) $(NOPARABUILD) -C $(APP) ENGINESDIR=$(ENGINESDIR) all
++	$(MAKE) $(NOPARABUILD) -C $(APP) ENGINESDIR=$(ENGINESDIR) MODULESDIR=$(MODULESDIR) all
+ 	$(MAKE) -C $(APP) install_dev
+ 	mkdir -p $(INSTALL_DIR)/bin
+ 	mkdir -p $(INSTALL_DIR)/etc/ssl

@@ -1,0 +1,12 @@
+--- ./bcmdrivers/broadcom/net/wl/shared/impl1/dhd_runner.c
++++ ./bcmdrivers/broadcom/net/wl/shared/impl1/dhd_runner.c
+@@ -1618,6 +1618,9 @@
+ 	/* Process max of rxbound RxComplete packets */
+ 	resched = dhd_runner_process_cpu_queue_rxpkt(dhd_hlp, dhd_rxbound);
+ 
++#if defined(CONFIG_BCM_DHD_CROSSBOW) && defined(CC_CROSSBOW_SWBCACPE_60718)
++	resched |= !rdpa_cpu_rxq_empty(dhd_hlp->cpu_port, dhd_hlp->cpu_queue_id);
++#endif
+ 	/* Process max of txbound TxComplete packets */
+ 	resched |= dhd_runner_process_cpu_queue_txcmpl(dhd_hlp, dhd_txbound);
+ 

@@ -1,0 +1,15 @@
+#
+# Copyright 2018 Savoir-Faire Linux Inc.
+#
+# SPDX-License-Identifier: GPL-2.0
+#
+
+ACTION=="remove", GOTO="blkpg_part_end"
+ENV{UDEV_DISABLE_PERSISTENT_STORAGE_RULES_FLAG}=="1", GOTO="blkpg_part_end"
+
+SUBSYSTEM!="block", GOTO="blkpg_part_end"
+KERNEL!="mmcblk*[0-9]", GOTO="blkpg_part_end"
+
+KERNEL=="mmcblk[0-9]", RUN+="/usr/sbin/blkpg-part add /dev/%k 100 0 512"
+
+LABEL="blkpg_part_end"

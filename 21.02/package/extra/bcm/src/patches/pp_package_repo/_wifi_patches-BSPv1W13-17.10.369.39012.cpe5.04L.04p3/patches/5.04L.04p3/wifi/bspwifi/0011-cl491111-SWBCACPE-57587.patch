@@ -1,0 +1,293 @@
+#@491111@NEWFILE_REMOVE_FIRST@_@
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/conf/layer.conf
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/conf/layer.conf
+@@ -13,4 +13,6 @@
+ LAYERVERSION_wifi = "1"
+ 
+ LAYERDEPENDS_wifi = "brcm-broadband"
++#temporarily mask out this bbappend as it make do_fetch failure.
++BBMASK += "${RDK_ROOT_PATH}/meta-cmf-broadband/recipes-ccsp/ccsp/ccsp-wifi-agent.bbappend"
+ 
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-common-library.bbappend
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-common-library.bbappend
+@@ -4,6 +4,7 @@
+     file://checkbrcmwifisupport.service \
+     file://brcmwifiinitialized.path \
+     file://checkbrcmwifisupport.path \
++    file://0001-have-ccspwifiagent-start-by-wifi-ready-path.patch \
+ "
+ 
+ SYSTEMD_SERVICE_${PN}_remove = "checkrpiwifisupport.service"
+new file mode 000000
+--- /dev/null	2023-11-29 09:52:48.035612933 -0800
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-common-library/0001-have-ccspwifiagent-start-by-wifi-ready-path.patch
+@@ -0,0 +1,13 @@
++diff --git a/systemd_units/ccspwifiagent.service b/systemd_units/ccspwifiagent.service
++index 4053ed24..0d128664 100644
++--- a/systemd_units/ccspwifiagent.service
+++++ b/systemd_units/ccspwifiagent.service
++@@ -31,6 +31,6 @@ ExecStart=/usr/bin/CcspWifiSsp -subsys $Subsys
++ ExecStopPost=/bin/sh -c 'echo "`date`: Stopping/Restarting CcspWifiSsp" >> ${PROCESS_RESTART_LOG}'
++ Restart=always
++ 
++-[Install]
++-WantedBy=multi-user.target
+++#[Install]
+++#WantedBy=multi-user.target
++ 
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-webui-jst.bbappend
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-webui-jst.bbappend
+@@ -1,5 +1,5 @@
+ FILESEXTRAPATHS_prepend := "${THISDIR}/${BPN}:"
+ 
+ # 0001 webpage wifi configure failure fix
+-SRC_URI += "file://0001-fix-wifi-webconf.patch;patchdir=../../.."
++#SRC_URI += "file://0001-fix-wifi-webconf.patch;patchdir=../../.."
+ 
+deleted file mode 000000
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-webui-jst/0001-fix-wifi-webconf.patch
++++ /dev/null	2023-11-29 09:52:48.035612933 -0800
+@@ -1,71 +0,0 @@
+-diff --git a/source/Styles/xb3/jst/actionHandler/ajaxSet_wireless_network_configuration_redirection.jst b/source/Styles/xb3/jst/actionHandler/ajaxSet_wireless_network_configuration_redirection.jst
+-index 7b57ddc4..b4c1efed 100644
+---- a/source/Styles/xb3/jst/actionHandler/ajaxSet_wireless_network_configuration_redirection.jst
+-+++ b/source/Styles/xb3/jst/actionHandler/ajaxSet_wireless_network_configuration_redirection.jst
+-@@ -95,6 +95,20 @@ if($isCaptiveMode)
+- 			}/*p2j-array*/;
+- 		}
+- 		// this method for only restart a certain SSID
+-+		function MiniApplySSID($ssid) {
+-+			if(($ssid == 17) && ($OperatingChannelBandwidth == "6GHz"))
+-+			{
+-+				$apply_id = 17;	//radio 3 for 6GHz
+-+				$apply_rf = 3; //SSID 15 for private wifi for 6GHz
+-+			}	
+-+			else
+-+			{
+-+				$apply_id = (1 << intval($ssid)-1);
+-+				$apply_rf = (2  - intval($ssid)%2);
+-+			}
+-+			setStr("Device.WiFi.Radio."+$apply_rf+".X_CISCO_COM_ApplySettingSSID", $apply_id, false);
+-+			setStr("Device.WiFi.Radio."+$apply_rf+".X_CISCO_COM_ApplySetting", "true", true);
+-+		}
+- 		for($i = "1"; $i <= $RadioNumberOfEntries; $i++){
+- 			if(($i==3) && ($OperatingChannelBandwidth == "6GHz"))
+- 			{
+-@@ -114,8 +128,7 @@ if($isCaptiveMode)
+- 			setStr("Device.WiFi.SSID."+$i+".SSID", $network_name_arr[$i], true);
+- 			setStr("Device.WiFi.AccessPoint."+$i+".Security.X_COMCAST-COM_KeyPassphrase", $network_pass_arr[$i], true);
+- 			// setStr("Device.WiFi.Radio."+$r+".X_CISCO_COM_ApplySetting", "true", true);
+--			setStr("Device.WiFi.ApplyAccessPointSettings", "true", true);
+--	                setStr("Device.WiFi.ApplyRadioSettings","true",true);
+-+			MiniApplySSID($i);
+- 		}
+- 		sleep(10);
+- 		$response = []/*p2j-array*/;
+-diff --git a/source/Styles/xb6/jst/actionHandler/ajaxSet_wireless_network_configuration_edit.jst b/source/Styles/xb6/jst/actionHandler/ajaxSet_wireless_network_configuration_edit.jst
+-index 635ef31c..d538e839 100644
+---- a/source/Styles/xb6/jst/actionHandler/ajaxSet_wireless_network_configuration_edit.jst
+-+++ b/source/Styles/xb6/jst/actionHandler/ajaxSet_wireless_network_configuration_edit.jst
+-@@ -61,7 +61,20 @@ $Radio_3_Support_Modes = getStr("Device.WiFi.Radio.3.SupportedStandards");
+- 
+- if($i != 1 && $i != 2 && $i != 17) $Mesh_Mode = false;
+- // this method for only restart a certain SSID
+--
+-+function MiniApplySSID($ssid) {
+-+	if($ssid == 17)
+-+	{
+-+		$apply_id = 17;
+-+		$apply_rf = 3;
+-+	}
+-+	else
+-+	{
+-+		$apply_id = (1 << intval($ssid)-1);
+-+		$apply_rf = (2  - intval($ssid)%2);
+-+	}
+-+	setStr("Device.WiFi.Radio."+$apply_rf+".X_CISCO_COM_ApplySettingSSID", $apply_id, false);
+-+	setStr("Device.WiFi.Radio."+$apply_rf+".X_CISCO_COM_ApplySetting", "true", true);
+-+}
+- $response_message = '';
+- //ssid 1,2 for all
+- //ssid 3,4 for mso only
+-@@ -225,8 +238,7 @@ if ($i == 1 || $i == 2 || $i == 17) {
+- 			}
+- 		}
+- 		// setStr("Device.WiFi.Radio."+$r+".X_CISCO_COM_ApplySetting", "true", true);
+--		setStr("Device.WiFi.ApplyAccessPointSettings", "true", true);
+--                setStr("Device.WiFi.ApplyRadioSettings","true",true);
+-+		MiniApplySSID($i);
+- 	}
+- }
+- if($response_message=='') {
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-wifi-agent.bbappend
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-wifi-agent.bbappend
+@@ -55,13 +55,13 @@
+         rel_year = int(mt.group(1))
+ 
+     if rdk_branch == 'rdk-next' or ( rel_year > 2022 and not re.match(r'.*2023q1.*', rdk_branch)) or \
+-       re.match(r'.*-rdkb-kirkstone.*',rdk_branch):
++       re.match(r'.*rdkb.*-kirkstone.*',rdk_branch):
+         d.appendVar('SRC_URI',' file://SWRDKB-1037_ccsp_wifi_agent_rdk_next.patch')
+     else:
+         d.appendVar('SRC_URI',' file://SWRDKB-1037_ccsp_wifi_agent.patch')
+ 
+     pn_name = d.getVar('PN') 
+-    if not re.match(r'.*-rdkb-kirkstone.*',rdk_branch):
++    if not re.match(r'.*rdkb.*-kirkstone.*',rdk_branch):
+         d.appendVar('EXTRA_OECONF',' --with-ccsp-platform=bcm --with-ccsp-arch=arm')
+     else:
+         d.appendVar(f"FILES_{pn_name}",' /lib/systemd/system/ccspwifiagent.service.d')
+@@ -74,4 +74,5 @@
+             file://SWRDKB-497_apshealth.patch \
+             file://0001-fix-halv3.patch \
+             file://0002-fix-mgmt_frame_received_callback-not-defined.patch \
++            file://0003-json-c-conflict.patch \
+             "
+new file mode 000000
+--- /dev/null	2023-11-29 09:52:48.035612933 -0800
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-ccsp/ccsp/ccsp-wifi-agent/0003-json-c-conflict.patch
+@@ -0,0 +1,33 @@
++diff --git a/source/TR-181/lib/common/Makefile.am b/source/TR-181/lib/common/Makefile.am
++index e8c93c2..71a900e 100644
++--- a/source/TR-181/lib/common/Makefile.am
+++++ b/source/TR-181/lib/common/Makefile.am
++@@ -34,4 +34,5 @@ libCcspWifiAgent_common_la_CPPFLAGS = -I$(top_srcdir)/source/TR-181/lib/const \
++                                       -I$(top_srcdir)/source/TR-181/lib/schema \
++                                       -I$(top_srcdir)/source/TR-181/sbapi
++ 
++-libCcspWifiAgent_common_la_LDFLAGS = -rdynamic -ldl -ljansson -lrt -lev
+++#libCcspWifiAgent_common_la_LDFLAGS = -rdynamic -ldl -ljansson -lrt -lev
+++libCcspWifiAgent_common_la_LDFLAGS = -rdynamic -ldl -ljson-c -lrt -lev
++diff --git a/source/TR-181/lib/json_util/Makefile.am b/source/TR-181/lib/json_util/Makefile.am
++index e3308e8..2e915a5 100644
++--- a/source/TR-181/lib/json_util/Makefile.am
+++++ b/source/TR-181/lib/json_util/Makefile.am
++@@ -33,4 +33,5 @@ libCcspWifiAgent_jsutil_la_CPPFLAGS = -I$(top_srcdir)/source/TR-181/lib/common \
++                                       -I$(top_srcdir)/source/TR-181/lib/qm \
++                                       -I$(top_srcdir)/source/TR-181/lib/schema
++ 
++-libCcspWifiAgent_jsutil_la_LDFLAGS = -ljansson
+++#libCcspWifiAgent_jsutil_la_LDFLAGS = -ljansson
+++libCcspWifiAgent_jsutil_la_LDFLAGS = -ljson-c
++diff --git a/source/TR-181/lib/pjs/Makefile.am b/source/TR-181/lib/pjs/Makefile.am
++index 28e5919..3baa9a6 100644
++--- a/source/TR-181/lib/pjs/Makefile.am
+++++ b/source/TR-181/lib/pjs/Makefile.am
++@@ -33,4 +33,5 @@ libCcspWifiAgent_pjs_la_CPPFLAGS = -I$(top_srcdir)/source/TR-181/lib/common \
++                                    -I$(top_srcdir)/source/TR-181/lib/qm \
++                                    -I$(top_srcdir)/source/TR-181/lib/schema
++ 
++-libCcspWifiAgent_pjs_la_LDFLAGS = -ljansson
+++#libCcspWifiAgent_pjs_la_LDFLAGS = -ljansson
+++libCcspWifiAgent_pjs_la_LDFLAGS = -ljson-c
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-kernel/linux/bcalinux_4.19.bbappend
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-kernel/linux/bcalinux_4.19.bbappend
+@@ -3,7 +3,7 @@
+ python () {
+     import re
+     rdk_branch = d.getVar('CMF_GIT_BRANCH')
+-    if re.match(r'.*-rdkb-kirkstone.*',rdk_branch):
++    if re.match(r'.*rdkb.*-kirkstone.*',rdk_branch):
+         d.appendVar('DEPENDS', ' autoconf-native automake-native ')
+ }
+ 
+--- ./userspace/private/apps/wlan/wlssk/wlssk.c
++++ ./userspace/private/apps/wlan/wlssk/wlssk.c
+@@ -111,6 +111,43 @@
+ 
+ char vifslist[1024] = {0};
+ 
++#ifdef RDK_BUILD
++#define WIFI_SETUP_FEATURE_FILE "/tmp/wifi_setup_feature.txt"
++int check_feature(char *feature, char *result)
++{
++	FILE * fp;
++	char * line = NULL;
++	size_t len = 0;
++	ssize_t read = 0;
++	int ret = 0;
++	fp = fopen(WIFI_SETUP_FEATURE_FILE, "r");
++	if (fp) {
++		while ((read = getline(&line, &len, fp)) != -1) {
++			if (strncmp(line, feature, read-1) == 0) {
++				ret = 1;
++				break;
++			}
++		}
++		fclose(fp);
++		if (line)
++			free(line);
++	}
++
++	if (ret == 0 && result) {
++		char tmp[256] = {0};
++		if (snprintf(tmp, 256, "/proc/environment/%s", feature) > 0 &&
++			(fp = fopen(tmp, "r"))) {
++			if ((fgets(tmp, 256, fp)) && (!strncmp(tmp, result, strlen(result))))
++				ret = 1;
++			fprintf(stderr, "%s:%d-feature:%s, tmp:%s\n", __FUNCTION__, __LINE__,
++				feature, tmp);
++			fclose(fp);
++		}
++	}
++	return ret;
++}
++#endif /* RDK_BUILD */
++
+ void wlssk_init(void)
+ {
+ 	char *restore = NULL;
+@@ -667,43 +704,6 @@
+ }
+ #endif  /* !BUILD_BRCM_BASE_SHELL */
+ 
+-#ifdef RDK_BUILD
+-#define WIFI_SETUP_FEATURE_FILE "/tmp/wifi_setup_feature.txt"
+-int check_feature(char *feature, char *result)
+-{
+-	FILE * fp;
+-	char * line = NULL;
+-	size_t len = 0;
+-	ssize_t read = 0;
+-	int ret = 0;
+-	fp = fopen(WIFI_SETUP_FEATURE_FILE, "r");
+-	if (fp) {
+-		while ((read = getline(&line, &len, fp)) != -1) {
+-			if (strncmp(line, feature, read-1) == 0) {
+-				ret = 1;
+-				break;
+-			}
+-		}
+-		fclose(fp);
+-		if (line)
+-			free(line);
+-	}
+-
+-	if (ret == 0 && result) {
+-		char tmp[256] = {0};
+-		if (snprintf(tmp, 256, "/proc/environment/%s", feature) > 0 &&
+-			(fp = fopen(tmp, "r"))) {
+-			if ((fgets(tmp, 256, fp)) && (!strncmp(tmp, result, strlen(result))))
+-				ret = 1;
+-			fprintf(stderr, "%s:%d-feature:%s, tmp:%s\n", __FUNCTION__, __LINE__,
+-				feature, tmp);
+-			fclose(fp);
+-		}
+-	}
+-	return ret;
+-}
+-#endif /* RDK_BUILD */
+-
+ void wlssk_restart(unsigned long targets)
+ {
+ 	unsigned char i;
+--- ./userspace/private/apps/wlan/wlssk/wlssk.h
++++ ./userspace/private/apps/wlan/wlssk/wlssk.h
+@@ -50,6 +50,7 @@
+ #ifndef __WLSSK_H__
+ #define __WLSSK_H__
+ 
++#include <stdlib.h>
+ #include "bcmconfig.h"
+ #include "wlsyscall.h"
+ #include "wldpd.h"

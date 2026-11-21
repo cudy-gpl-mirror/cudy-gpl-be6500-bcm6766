@@ -1,0 +1,19 @@
+--- ./userspace/private/apps/wlan/scripts/wlinc.sh
++++ ./userspace/private/apps/wlan/scripts/wlinc.sh
+@@ -23,6 +23,7 @@
+ CROSSBOW=`gunzip < /proc/config.gz |grep "CONFIG_BCM_CROSSBOW=y"`
+ ARCHER=`cat /proc/net/dev |grep archer |cut -d ':' -f1`
+ CROSSBOWFOL=`gunzip < /proc/config.gz |grep "CONFIG_BCM_CROSSBOW_FULL_OFFLOAD=y"`
++CROSSBOWSPC=`gunzip < /proc/config.gz |grep "CONFIG_HAVE_SKBUFF_WL_SPC_V2"`
+ if [ ! -z $CROSSBOW ] && [ -z $CROSSBOWFOL ]; then
+     # Crossbow platform without hardware offload (6764L),
+     # make it Archer data path with crossbow WiFi
+@@ -1329,7 +1330,7 @@
+         fi
+     done
+ 
+-    if [ -n "$CROSSBOWFOL" ]; then
++    if [ -n "$CROSSBOWFOL" -a -n "$CROSSBOWSPC" ]; then
+ 	    extra_cpu_for_xBow
+     fi
+ 

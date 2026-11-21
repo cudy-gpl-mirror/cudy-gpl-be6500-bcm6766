@@ -1,0 +1,107 @@
+.\"
+.\"	Sami Kerola		Janne Riihijärvi
+.\"	Ollinkehä 8 H 96
+.\"	92120 RAAHE
+.\"	FINLAND
+.\"
+.\"	kerolasa@iki.fi		jariihij@mail.student.oulu.fi
+.\"
+.TH UDBACHK 8 "May 10 1999 - version 0.11"
+.SH NAME
+udbachk \- passwd, group, shadow and gshadow file integrity checker
+.SH SYNOPSIS
+.B udbachk
+[-d] [-p path] [-g path] [-s path] [-G path] [-f file] [-v] [-h]
+.SH DESCRIPTION
+This program checks passwd, group, shadow and gshadow file integrity. The
+program does not do anything else but reports possible problems with the
+files and their states.
+.SH ARGUMENTS
+.TP
+.I "\-d, \-\-default"
+Check files /etc/passwd /etc/group /etc/shadow and /etc/gshadow
+.TP
+.I "\-p, \-\-passwd"
+Path to the passwd file which you want to check.
+.TP
+.I "\-g, \-\-group"
+Path to the group file which you want to check.
+.TP
+.I "\-s, \-\-shadow"
+Path to the shadow file which you want to check.
+.TP
+.I "\-G, \-\-gshadow"
+Path to the gshadow file you want to check.
+.TP
+.I "\-f, \-\-file"
+Write output to a file instead of the standard output.
+.TP
+.I "\-v, \-\-version"
+Print version information to standard output and exit successfully.
+.TP
+.I "\-h, \-\-help"
+Print help to standard output and exit successfully.
+.SH FILES
+.if n .ta 2.8i
+.if t .ta 2.1i
+$HOME/.udbachk.conf	overrides system defaults
+.br
+/usr/local/etc/udbachk.conf	system defaults
+.PP
+There can be following definitions in configuration file. White spaces 
+and empty lines are ignored. Character for commentation is # (hash).
+.TP
+PATH_TO_PASSWD
+Path to the passwd file. If not defined, no check will be made.
+.TP
+PATH_TO_GROUP
+Path to the group file. If not defined, no check will be made.
+.TP
+PATH_TO_SHADOW
+Path to the shadow file. If not defined no, check will be made.
+.TP
+PATH_TO_GSHADOW
+Path to the shadow group file. If not defined, no check will be made
+.TP
+MODE_FOR_PASSWD
+passwd file mode. If any of the numbers is 8 or 9 no check will be made for
+that permission and right permission is taken to be zero. Notice that
+permission is not an umask. It is numeric mode which is used with chmod.
+.TP
+MODE_FOR_GROUP
+group file mode. See mode for passwd.
+.TP
+MODE_FOR_SHADOW
+shadow file mode. See mode for passwd.
+.TP
+MODE_FOR_GSHADOW
+gshadow file mode. See mode for passwd.
+.TP
+LONGEST_LOGIN_NAME
+Longest allowed login name which does not cause a warning.
+.TP
+LONGEST_GROUP_NAME
+Longest allowed group name which does not cause a warning.
+.TP
+MIN_UID
+Smallest allowed UID that does not cause a warning.
+.TP
+MAX_UID
+Biggest allowed UID that does not cause a warning.
+.TP
+MIN_GID
+Smallest allowed GID that does not cause a warning.
+.TP
+MAX_GID
+Biggest allowed GID that does not cause a warning.
+.SH BUGS
+Program outputs too much irrelevant stuff.
+.SH AUTHOR
+Sami Kerola <kerolasa@iki.fi>
+.SH "SEE ALSO"
+.BR passwd (5),
+.BR group (5),
+.BR shadow (5),
+.BR chmod (1),
+.BR "Security-HOWTO",
+.BR Shadow-Password-HOWTO

@@ -1,0 +1,77 @@
+#!/bin/sh
+#
+# Copyright (c) 2016-2018 Linutronix GmbH. All rights reserved.
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+
+usage_exit()
+{
+	echo "error: $2" 1>&2
+	echo "usage: $1 <absolute-dump-path> <dump-scope>" 1>&2
+	exit 1
+}
+
+if [ $# -ne 2 ]; then
+	usage_exit "$0" 'wrong number of arguments'
+fi
+
+mcdbin=''
+
+char0=`echo "$1" | cut -b 1`
+if [ "$char0" != "/" ]; then
+	usage_exit "$0" 'dump path not absolute'
+fi
+
+char0=`echo "$0" | cut -b 1`
+if [ "$char0" = '.' -o "$char0" = '/' ]; then
+	# check for minicoredumper next to minicoredumper_trigger
+	mcdbase=`dirname "$0"`
+	mcdlocalbin="${mcdbase}/minicoredumper"
+	if [ -x "$mcdlocalbin" ]; then
+		mcdbin="$mcdlocalbin"
+	fi
+fi
+
+if [ -z "$mcdbin" ]; then
+	# check PATH for minicoredumper
+	mcdbin=`which minicoredumper`
+fi
+
+if [ -z "$mcdbin" -o ! -x "$mcdbin" ]; then
+	usage_exit "$0" 'unable to locate minicoredumper'
+fi
+
+mkdir -p "$1"
+
+cfgfile=`mktemp`
+rcptfile=`mktemp`
+
+# create config with specified dump dir
+cat > $cfgfile << EOF
+{
+    "base_dir": "$1",
+    "watch": [
+        {
+            "recept": "$rcptfile"
+        }
+    ]
+}
+EOF
+
+# create general recept with specified scope
+cat > $rcptfile << EOF
+{
+    "dump_scope": $2,
+    "live_dumper": true
+}
+EOF
+
+# call minicoredumper with pid=0 so we don't dump ourself
+"$mcdbin" 0 `id -u` `id -g` 0 `date -u +%s` "`uname -n`" \
+	"`basename $0`" "$cfgfile"
+rc=$?
+
+rm -f $cfgfile $rcptfile
+
+exit $rc

@@ -1,0 +1,86 @@
+--- ./bcmdrivers/broadcom/net/wl/shared/impl1/wl_blog.c
++++ ./bcmdrivers/broadcom/net/wl/shared/impl1/wl_blog.c
+@@ -136,6 +136,9 @@
+ 			    ((struct wl_if *)WL_DEV_IF(skb->dev))->subunit;
+ 		} else {
+ 			skb->blog_p->wfd.nic_ucast.is_wfd = 1;
++#if defined(BCM_WLHDR) && defined(BCM_PKTFWD_LLC_SNAP)
++			skb->blog_p->wfd.nic_ucast.llcsnap_flag = WLHDR_SUPPORT(wl) ? 1 : 0;
++#endif /* BCM_WLHDR && BCM_PKTFWD_LLC_SNAP */
+ #if defined(BCM_WLAN_PER_CLIENT_FLOW_LEARNING) && defined(WMF)
+ 			if (wlif->wlcif->type != WLC_IFTYPE_WDS && PKTISWMF_HANDLED(skb)) {
+ 				struct scb *scb = wlc_scbfind_from_wlcif(wl->wlc, wlif->wlcif,
+--- ./bcmdrivers/broadcom/net/wl/shared/impl1/wl_pktfwd.c
++++ ./bcmdrivers/broadcom/net/wl/shared/impl1/wl_pktfwd.c
+@@ -149,6 +149,10 @@
+ #define WLC_DUMP_INST(_wl)	((_wl)->pub)
+ #endif
+ 
++#ifndef WLHDR_SUPPORT
++#define WLHDR_SUPPORT(wl)	false
++#endif /* ! WLHDR_SUPPORT */
++
+ /**
+  * =============================================================================
+  * Section: PKTFWD Global System Object(s)
+@@ -3452,15 +3456,18 @@
+ 		&pkttag, &wlanext);
+ 
+ 	while (skb != (struct sk_buff *)NULL) {
+-		bcm_prefetch(PKTDATA(wl->osh, skb));	/* for llc snap insert */
++		if (!WLHDR_SUPPORT(wl)) {
++			bcm_prefetch(PKTDATA(wl->osh, skb));	/* for llc snap insert */
++		}
+ 
+ 		/* Copy pkttag, wlanext into skb */
+ 		*WLPKTTAG(skb) = pkttag;
+ 		skb->bcm_ext.wlan = wlanext;
+ 
+ 		bcm_prefetch(skb);
+-
+-		wl_pktfwd_llc_snap_insert(wl->osh, skb);
++		if (!WLHDR_SUPPORT(wl)) {
++			wl_pktfwd_llc_snap_insert(wl->osh, skb);
++		}
+ 
+ 		skb->dev = net_device;
+ 
+@@ -3488,6 +3495,11 @@
+ 
+ 		skb->prev = skb->next = NULL;
+ 		skb_cb_zero(skb);	/* OPTIMIZE (redundant) as pktc takes wl_start path */
++
++		if (WLHDR_SUPPORT(wl)) {
++			WLPKTTAG(skb)->flags |= WLF_NON8023;
++		}
++
+ 		skb->dev = net_device;
+ 
+ 		PKTSETCHAINED(wl->osh, skb);
+@@ -3524,6 +3536,11 @@
+ 
+ 		skb->prev = skb->next = NULL;
+ 		skb_cb_zero(skb);
++
++		if (WLHDR_SUPPORT(wl)) {
++			WLPKTTAG(skb)->flags |= WLF_NON8023;
++		}
++
+ 		skb->dev = net_device;
+ 
+ 		/* increment counters for each pkt before it is forwarded to wl driver */
+--- ./bcmdrivers/broadcom/net/wl/shared/impl1/wl_wfd.c
++++ ./bcmdrivers/broadcom/net/wl/shared/impl1/wl_wfd.c
+@@ -518,6 +518,12 @@
+ 
+ #endif /* !BCM_AWL */
+ 
++#if defined(BCM_WLHDR) && defined(BCM_PKTFWD_LLC_SNAP)
++	if (wl_pktlist_context->add_llcsnap_header) {
++		wl->wlhdr_support = true;
++	}
++#endif /* BCM_WLHDR && BCM_PKTFWD_LLC_SNAP */
++
+ 	if (wfd_idx == WFD_NOT_SUPPORTED) {
+ 		/* Radio is not supported by WFD, lets disable WFD */
+ 		wfd_idx = WLAN_WFD_DISABLE_IDX;

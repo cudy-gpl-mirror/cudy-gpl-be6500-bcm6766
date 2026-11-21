@@ -1,0 +1,51 @@
+'\" t
+.\"
+.\" Copyright (c) 2015-2018 Linutronix GmbH. All rights reserved.
+.\"
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.TH LIBMINICOREDUMPER 7 "2017-01-19" "minicoredumper" "minicoredumper"
+.
+.SH NAME
+libminicoredumper \- a library for registering application data for dumping
+with the
+.BR minicoredumper (1)
+.
+.SH DESCRIPTION
+.B libminicoredumper
+provides an interface for registering binary and text data for dumping with
+the
+.BR minicoredumper (1).
+The data can be dumped into a
+.BR core (5)
+file (in case this application crashes), or into separate files for simple
+access.
+.PP
+If any data is registered for dumping, an anonymous UNIX domain socket is
+used to send a message to
+.BR minicoredumper_regd (1),
+thus registering this application with the
+.BR minicoredumper (1).
+When some other application crashes, the
+.BR minicoredumper (1)
+will dump the registered data from this application as well. This feature
+allows variable information from multiple applications to be dumped soon
+after any application crashes. To minimize the time between an application
+crash and the dumping of other registered applications, the
+.BR minicoredumper (1)
+uses PTRACE_SEIZE and PTRACE_INTERRUPT to temporarily pause registered
+applications until all dumping is complete.
+.
+.SH "SEE ALSO"
+.BR mcd_dump_data_register_bin (3),
+.BR mcd_dump_data_register_text (3),
+.BR mcd_dump_data_unregister (3),
+.BR minicoredumper (1),
+.BR minicoredumper.cfg.json (5),
+.BR minicoredumper.recept.json (5),
+.BR minicoredumper_regd (1),
+.BR minicoredumper_trigger (1),
+.BR coreinject (1)
+.BR ptrace (2)
+.PP
+The DiaMon Workgroup: <http://www.diamon.org>

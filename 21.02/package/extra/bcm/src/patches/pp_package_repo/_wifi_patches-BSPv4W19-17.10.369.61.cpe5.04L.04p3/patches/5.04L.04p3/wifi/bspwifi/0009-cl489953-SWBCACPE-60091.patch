@@ -1,0 +1,582 @@
+#@489953@NEWFILE_REMOVE_FIRST@_@
+--- ./userspace/private/apps/hndrouter/Makefile
++++ ./userspace/private/apps/hndrouter/Makefile
+@@ -48,7 +48,7 @@
+ export LINUXDIR = $(KERNEL_DIR)
+ SUBMAKE_SETTINGS = SRCBASE=$(SRCBASE) BASEDIR=$(BASEDIR)
+ 
+-USR_CFLAGS += -I$(INC_BRCMSHARED_PUB_PATH)/$(BRCM_BOARD)
++USR_CFLAGS += -I$(INC_BRCMSHARED_PUB_PATH)/$(BRCM_BOARD) $(RDKB_CFLAGS)
+ USR_LDFLAGS += -L$(INSTALL_DIR)/lib -lnvram -lbcm_flashutil -lbcm_boardctl -lbcm_util -lsys_util -lgen_util -L$(TOOLCHAIN)/../lib
+ 
+ # DSLCPE
+deleted file mode 000000
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/WIFIHAL.patch
++++ /dev/null	2023-11-16 21:21:27.548428417 -0800
+@@ -1,113 +0,0 @@
+-diff --git a/WIFIHAL_stub/src/WIFIHAL.cpp b/WIFIHAL_stub/src/WIFIHAL.cpp
+-index 0149f41..c598ec9 100644
+---- a/WIFIHAL_stub/src/WIFIHAL.cpp
+-+++ b/WIFIHAL_stub/src/WIFIHAL.cpp
+-@@ -18,6 +18,88 @@
+- */
+- 
+- #include "WIFIHAL.h"
+-+
+-+#include <sys/socket.h>
+-+#include <netinet/in.h>
+-+#include <arpa/inet.h>
+-+#include <unistd.h>
+-+
+-+#define BCM_COMMON_WIFIHAL 1
+-+
+-+extern "C"
+-+{
+-+    INT wifi_init_hal(void);
+-+}
+-+
+-+#define WIFI_API_EVENT_UDP_SPORT  55010
+-+#define WIFI_API_EVENT_UDP_SIP  "127.0.0.1"
+-+
+-+#define isSockSetApi(api)  (strstr(api, "set") || strstr(api, "push") || strstr(api, "enable"))
+-+
+-+typedef struct {
+-+        char            api_name[1024];
+-+        int             radioIndex;
+-+        char            api_data[1024];
+-+} wifi_api_info_t;
+-+
+-+static int  wifi_api_socket = -1;
+-+
+-+static int wifi_api_send_msg( wifi_api_info_t *p_apiInfo )
+-+{
+-+        int err = -1;
+-+        struct sockaddr_in sockaddr;
+-+        int sentBytes = 0;
+-+
+-+        if (wifi_api_socket < 0) {
+-+                memset(&sockaddr, 0, sizeof(sockaddr));
+-+                sockaddr.sin_family = AF_INET;
+-+                sockaddr.sin_port = htons(WIFI_API_EVENT_UDP_SPORT);
+-+                if (inet_aton(WIFI_API_EVENT_UDP_SIP, &sockaddr.sin_addr) == 0) {
+-+                        printf("inet_aton() failed\n");
+-+                        return err;
+-+                }
+-+
+-+                if (( wifi_api_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+-+                        printf("%s@%d Unable to create socket\n", __FUNCTION__, __LINE__ );
+-+                        return err;
+-+                }
+-+        }
+-+
+-+        sentBytes = sendto(wifi_api_socket, p_apiInfo, sizeof(wifi_api_info_t), 0,
+-+                (struct sockaddr *)&sockaddr, sizeof(struct sockaddr_in));
+-+
+-+        //printf("UDP pkt sent; sendingBytes[%d], sentBytes[%d]\n", sizeof(wifi_api_info_t), sentBytes);
+-+        if (sentBytes != sizeof(wifi_api_info_t)) {
+-+                printf("UDP send failed; sendingBytes[%d], sentBytes[%d]\n",
+-+                        sizeof(wifi_api_info_t), sentBytes);
+-+        }
+-+        else {
+-+                int ret = 0;
+-+                struct sockaddr_in from;
+-+                socklen_t sock_len = sizeof(from);
+-+
+-+                /* Get the execution result from socket */
+-+                if (recvfrom(wifi_api_socket, &ret, sizeof(ret), 0,
+-+                        (struct sockaddr *)&from, &sock_len) < 0) {
+-+                        printf("%s: %s recvfrom error %d!\n", __FUNCTION__,
+-+                                p_apiInfo->api_name, errno);
+-+                }
+-+                else {
+-+#if 0 /* Enable this for debugging */
+-+                        printf("%s: %s ret %d!\n", __FUNCTION__, p_apiInfo->api_name, ret);
+-+#endif
+-+                        err = ret;
+-+                }
+-+        }
+-+
+-+        //printf("%s@%d: Close socket\n", __FUNCTION__, __LINE__ );
+-+        close(wifi_api_socket);
+-+        wifi_api_socket = -1;
+-+
+-+        return err;
+-+}
+-+
+-+
+- /*******************************************************************************************
+-  *
+-  * Function Name        : ssp_WIFIHALApplySettings
+-@@ -128,7 +210,7 @@ int ssp_WIFIHALGetOrSetParamBoolValue(int radioIndex, unsigned char *enable, cha
+-         return_status = wifi_getRadioDfsSupport(radioIndex, enable);
+-     else if(!strcmp(method, "getRadioDFSEnable"))
+-         return_status = wifi_getRadioDfsEnable(radioIndex, enable);
+--    else if(!strcmp(method, "setRadioDfsEnable"))
+-+    else if(!strcmp(method, "setRadioDFSEnable"))
+-         return_status = wifi_setRadioDfsEnable(radioIndex, *enable);
+-     else if(!strcmp(method, "getAutoChannelRefreshPeriodSupported"))
+-         return_status = wifi_getRadioAutoChannelRefreshPeriodSupported(radioIndex, enable);
+-@@ -1021,6 +1103,10 @@ std::string WIFIHAL::testmodulepre_requisites()
+- 
+-     if(SSP_SUCCESS == return_status)
+-     {
+-+#if defined BCM_COMMON_WIFIHAL
+-+        return_status = wifi_init_hal();
+-+        DEBUG_PRINT(DEBUG_TRACE,"\nreturn value from wifi_init_hal is %d\n", return_status);
+-+#endif /* BCM_COMMON_WIFIHAL */
+-         DEBUG_PRINT(DEBUG_TRACE,"\n testmodulepre_requisites ---> Initialize SUCCESS !!! \n");
+-         DEBUG_PRINT(DEBUG_TRACE,"\n WIFIHAL testmodulepre_requisites --->Exit\n");
+-         return "SUCCESS";
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/tdk-b.bbappend
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/tdk-b.bbappend
+@@ -1,5 +1,4 @@
+-
+-FILESEXTRAPATHS_prepend := "${THISDIR}:"
++FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
+ 
+ SRC_URI_append += " \
+     file://WIFIHAL.patch \
+@@ -15,6 +14,7 @@
+ 
+     if rdk_branch == 'rdk-next' or rel_year > 2022 :
+         d.appendVar('SRC_URI',' file://tdk_platform_utility_rdk_next.patch')
++        d.appendVar('SRC_URI',' file://0001-fix-Wformat-overflow-compiling-issue.patch')
+     else:
+         d.appendVar('SRC_URI',' file://tdk_platform_utility.patch')
+ }
+@@ -40,4 +40,3 @@
+     sed -i 's/RADIO_IF_2G=wifi0/RADIO_IF_2G=wl0/g' ${D}/etc/tdk_platform.properties
+     sed -i 's/RADIO_IF_5G=wifi1/RADIO_IF_5G=wl1/g' ${D}/etc/tdk_platform.properties
+ }
+-
+new file mode 000000
+--- /dev/null	2023-11-16 21:21:27.548428417 -0800
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/tdk-b/0001-fix-Wformat-overflow-compiling-issue.patch
+@@ -0,0 +1,13 @@
++diff --git a/ethsw_hal_stub/src/ethsw_stub_hal.cpp b/ethsw_hal_stub/src/ethsw_stub_hal.cpp
++index 90be2ed..f25b9eb 100644
++--- a/ethsw_hal_stub/src/ethsw_stub_hal.cpp
+++++ b/ethsw_hal_stub/src/ethsw_stub_hal.cpp
++@@ -419,7 +419,7 @@ void ethsw_stub_hal::ethsw_stub_hal_Get_AssociatedDevice(IN const Json::Value& r
++ {
++     DEBUG_PRINT(DEBUG_TRACE,"Inside Function ethsw_stub_hal_Get_AssociatedDevice stub\n");
++     int isNegativeScenario = 0;
++-    char details[120] = {'\0'};
+++    char details[160] = {'\0'};
++     eth_device_t *eth_device_conf_ptr = NULL;
++     unsigned long int array_size = 0;
++ 
+new file mode 000000
+--- /dev/null	2023-11-16 21:21:27.548428417 -0800
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/tdk-b/WIFIHAL.patch
+@@ -0,0 +1,113 @@
++diff --git a/WIFIHAL_stub/src/WIFIHAL.cpp b/WIFIHAL_stub/src/WIFIHAL.cpp
++index 0149f41..c598ec9 100644
++--- a/WIFIHAL_stub/src/WIFIHAL.cpp
+++++ b/WIFIHAL_stub/src/WIFIHAL.cpp
++@@ -18,6 +18,88 @@
++ */
++ 
++ #include "WIFIHAL.h"
+++
+++#include <sys/socket.h>
+++#include <netinet/in.h>
+++#include <arpa/inet.h>
+++#include <unistd.h>
+++
+++#define BCM_COMMON_WIFIHAL 1
+++
+++extern "C"
+++{
+++    INT wifi_init_hal(void);
+++}
+++
+++#define WIFI_API_EVENT_UDP_SPORT  55010
+++#define WIFI_API_EVENT_UDP_SIP  "127.0.0.1"
+++
+++#define isSockSetApi(api)  (strstr(api, "set") || strstr(api, "push") || strstr(api, "enable"))
+++
+++typedef struct {
+++        char            api_name[1024];
+++        int             radioIndex;
+++        char            api_data[1024];
+++} wifi_api_info_t;
+++
+++static int  wifi_api_socket = -1;
+++
+++static int wifi_api_send_msg( wifi_api_info_t *p_apiInfo )
+++{
+++        int err = -1;
+++        struct sockaddr_in sockaddr;
+++        int sentBytes = 0;
+++
+++        if (wifi_api_socket < 0) {
+++                memset(&sockaddr, 0, sizeof(sockaddr));
+++                sockaddr.sin_family = AF_INET;
+++                sockaddr.sin_port = htons(WIFI_API_EVENT_UDP_SPORT);
+++                if (inet_aton(WIFI_API_EVENT_UDP_SIP, &sockaddr.sin_addr) == 0) {
+++                        printf("inet_aton() failed\n");
+++                        return err;
+++                }
+++
+++                if (( wifi_api_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+++                        printf("%s@%d Unable to create socket\n", __FUNCTION__, __LINE__ );
+++                        return err;
+++                }
+++        }
+++
+++        sentBytes = sendto(wifi_api_socket, p_apiInfo, sizeof(wifi_api_info_t), 0,
+++                (struct sockaddr *)&sockaddr, sizeof(struct sockaddr_in));
+++
+++        //printf("UDP pkt sent; sendingBytes[%d], sentBytes[%d]\n", sizeof(wifi_api_info_t), sentBytes);
+++        if (sentBytes != sizeof(wifi_api_info_t)) {
+++                printf("UDP send failed; sendingBytes[%d], sentBytes[%d]\n",
+++                        sizeof(wifi_api_info_t), sentBytes);
+++        }
+++        else {
+++                int ret = 0;
+++                struct sockaddr_in from;
+++                socklen_t sock_len = sizeof(from);
+++
+++                /* Get the execution result from socket */
+++                if (recvfrom(wifi_api_socket, &ret, sizeof(ret), 0,
+++                        (struct sockaddr *)&from, &sock_len) < 0) {
+++                        printf("%s: %s recvfrom error %d!\n", __FUNCTION__,
+++                                p_apiInfo->api_name, errno);
+++                }
+++                else {
+++#if 0 /* Enable this for debugging */
+++                        printf("%s: %s ret %d!\n", __FUNCTION__, p_apiInfo->api_name, ret);
+++#endif
+++                        err = ret;
+++                }
+++        }
+++
+++        //printf("%s@%d: Close socket\n", __FUNCTION__, __LINE__ );
+++        close(wifi_api_socket);
+++        wifi_api_socket = -1;
+++
+++        return err;
+++}
+++
+++
++ /*******************************************************************************************
++  *
++  * Function Name        : ssp_WIFIHALApplySettings
++@@ -128,7 +210,7 @@ int ssp_WIFIHALGetOrSetParamBoolValue(int radioIndex, unsigned char *enable, cha
++         return_status = wifi_getRadioDfsSupport(radioIndex, enable);
++     else if(!strcmp(method, "getRadioDFSEnable"))
++         return_status = wifi_getRadioDfsEnable(radioIndex, enable);
++-    else if(!strcmp(method, "setRadioDfsEnable"))
+++    else if(!strcmp(method, "setRadioDFSEnable"))
++         return_status = wifi_setRadioDfsEnable(radioIndex, *enable);
++     else if(!strcmp(method, "getAutoChannelRefreshPeriodSupported"))
++         return_status = wifi_getRadioAutoChannelRefreshPeriodSupported(radioIndex, enable);
++@@ -1021,6 +1103,10 @@ std::string WIFIHAL::testmodulepre_requisites()
++ 
++     if(SSP_SUCCESS == return_status)
++     {
+++#if defined BCM_COMMON_WIFIHAL
+++        return_status = wifi_init_hal();
+++        DEBUG_PRINT(DEBUG_TRACE,"\nreturn value from wifi_init_hal is %d\n", return_status);
+++#endif /* BCM_COMMON_WIFIHAL */
++         DEBUG_PRINT(DEBUG_TRACE,"\n testmodulepre_requisites ---> Initialize SUCCESS !!! \n");
++         DEBUG_PRINT(DEBUG_TRACE,"\n WIFIHAL testmodulepre_requisites --->Exit\n");
++         return "SUCCESS";
+new file mode 000000
+--- /dev/null	2023-11-16 21:21:27.548428417 -0800
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/tdk-b/tdk_platform_utility.patch
+@@ -0,0 +1,53 @@
++diff --git a/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh b/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
++index 56fb1c0..506e3a1 100755
++--- a/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
+++++ b/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
++@@ -37,6 +37,34 @@ getCMMACAddress()
++     echo $macaddress
++ }
++
+++#get the AP0 DTIM interval
+++getAp0DTIMInterval()
+++{
+++    ap0dtim=`wl -i wl0 dtim`
+++    echo $ap0dtim
+++}
+++
+++#get the AP1 DTIM interval
+++getAp1DTIMInterval()
+++{
+++    ap1dtim=`wl -i wl1 dtim`
+++    echo $ap1dtim
+++}
+++
+++#get the AP0 Obss Coexistence
+++getRadio0ObssCoexistenceEnable()
+++{
+++    ap0obsscoex=`wl -i wl0 obss_coex`
+++    echo $ap0obsscoex
+++}
+++
+++#get the AP1 Obss Coexistence
+++getRadio1ObssCoexistenceEnable()
+++{
+++    ap1obsscoex=`wl -i wl1 obss_coex`
+++    echo $ap1obsscoex
+++}
+++
++ # Store the arguments to a variable
++ event=$1
++ processName=$2
++@@ -49,5 +77,13 @@ case $event in
++         killProcess;;
++    "getCMMACAddress")
++         getCMMACAddress;;
+++   "getAp0DTIMInterval")
+++        getAp0DTIMInterval;;
+++   "getAp1DTIMInterval")
+++        getAp1DTIMInterval;;
+++   "getRadio0ObssCoexistenceEnable")
+++        getRadio0ObssCoexistenceEnable;;
+++   "getRadio1ObssCoexistenceEnable")
+++        getRadio1ObssCoexistenceEnable;;
++    *) echo "Invalid Argument passed";;
++ esac
+new file mode 000000
+--- /dev/null	2023-11-16 21:21:27.548428417 -0800
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/tdk-b/tdk_platform_utility_rdk_next.patch
+@@ -0,0 +1,52 @@
++--- a/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
+++++ b/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
++@@ -46,6 +46,34 @@
++     echo $result
++ }
++ 
+++#get the AP0 DTIM interval
+++getAp0DTIMInterval()
+++{
+++    ap0dtim=`wl -i wl0 dtim`
+++    echo $ap0dtim
+++}
+++
+++#get the AP1 DTIM interval
+++getAp1DTIMInterval()
+++{
+++    ap1dtim=`wl -i wl1 dtim`
+++    echo $ap1dtim
+++}
+++
+++#get the AP0 Obss Coexistence
+++getRadio0ObssCoexistenceEnable()
+++{
+++    ap0obsscoex=`wl -i wl0 obss_coex`
+++    echo $ap0obsscoex
+++}
+++
+++#get the AP1 Obss Coexistence
+++getRadio1ObssCoexistenceEnable()
+++{
+++    ap1obsscoex=`wl -i wl1 obss_coex`
+++    echo $ap1obsscoex
+++}
+++
++ # Store the arguments to a variable
++ event=$1
++ processName=$2
++@@ -60,6 +88,14 @@
++         killProcess;;
++    "getCMMACAddress")
++         getCMMACAddress;;
+++   "getAp0DTIMInterval")
+++        getAp0DTIMInterval;;
+++   "getAp1DTIMInterval")
+++        getAp1DTIMInterval;;
+++   "getRadio0ObssCoexistenceEnable")
+++        getRadio0ObssCoexistenceEnable;;
+++   "getRadio1ObssCoexistenceEnable")
+++        getRadio1ObssCoexistenceEnable;;
++    "getQueryResult")
++         getQueryResult;;
++    *) echo "Invalid Argument passed";;
+deleted file mode 000000
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/tdk_platform_utility.patch
++++ /dev/null	2023-11-16 21:21:27.548428417 -0800
+@@ -1,53 +0,0 @@
+-diff --git a/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh b/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
+-index 56fb1c0..506e3a1 100755
+---- a/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
+-+++ b/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
+-@@ -37,6 +37,34 @@ getCMMACAddress()
+-     echo $macaddress
+- }
+-
+-+#get the AP0 DTIM interval
+-+getAp0DTIMInterval()
+-+{
+-+    ap0dtim=`wl -i wl0 dtim`
+-+    echo $ap0dtim
+-+}
+-+
+-+#get the AP1 DTIM interval
+-+getAp1DTIMInterval()
+-+{
+-+    ap1dtim=`wl -i wl1 dtim`
+-+    echo $ap1dtim
+-+}
+-+
+-+#get the AP0 Obss Coexistence
+-+getRadio0ObssCoexistenceEnable()
+-+{
+-+    ap0obsscoex=`wl -i wl0 obss_coex`
+-+    echo $ap0obsscoex
+-+}
+-+
+-+#get the AP1 Obss Coexistence
+-+getRadio1ObssCoexistenceEnable()
+-+{
+-+    ap1obsscoex=`wl -i wl1 obss_coex`
+-+    echo $ap1obsscoex
+-+}
+-+
+- # Store the arguments to a variable
+- event=$1
+- processName=$2
+-@@ -49,5 +77,13 @@ case $event in
+-         killProcess;;
+-    "getCMMACAddress")
+-         getCMMACAddress;;
+-+   "getAp0DTIMInterval")
+-+        getAp0DTIMInterval;;
+-+   "getAp1DTIMInterval")
+-+        getAp1DTIMInterval;;
+-+   "getRadio0ObssCoexistenceEnable")
+-+        getRadio0ObssCoexistenceEnable;;
+-+   "getRadio1ObssCoexistenceEnable")
+-+        getRadio1ObssCoexistenceEnable;;
+-    *) echo "Invalid Argument passed";;
+- esac
+deleted file mode 000000
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-rdkb/tdkb/tdk_platform_utility_rdk_next.patch
++++ /dev/null	2023-11-16 21:21:27.548428417 -0800
+@@ -1,52 +0,0 @@
+---- a/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
+-+++ b/platform/raspberrypi/agent/scripts/tdk_platform_utility.sh
+-@@ -46,6 +46,34 @@
+-     echo $result
+- }
+- 
+-+#get the AP0 DTIM interval
+-+getAp0DTIMInterval()
+-+{
+-+    ap0dtim=`wl -i wl0 dtim`
+-+    echo $ap0dtim
+-+}
+-+
+-+#get the AP1 DTIM interval
+-+getAp1DTIMInterval()
+-+{
+-+    ap1dtim=`wl -i wl1 dtim`
+-+    echo $ap1dtim
+-+}
+-+
+-+#get the AP0 Obss Coexistence
+-+getRadio0ObssCoexistenceEnable()
+-+{
+-+    ap0obsscoex=`wl -i wl0 obss_coex`
+-+    echo $ap0obsscoex
+-+}
+-+
+-+#get the AP1 Obss Coexistence
+-+getRadio1ObssCoexistenceEnable()
+-+{
+-+    ap1obsscoex=`wl -i wl1 obss_coex`
+-+    echo $ap1obsscoex
+-+}
+-+
+- # Store the arguments to a variable
+- event=$1
+- processName=$2
+-@@ -60,6 +88,14 @@
+-         killProcess;;
+-    "getCMMACAddress")
+-         getCMMACAddress;;
+-+   "getAp0DTIMInterval")
+-+        getAp0DTIMInterval;;
+-+   "getAp1DTIMInterval")
+-+        getAp1DTIMInterval;;
+-+   "getRadio0ObssCoexistenceEnable")
+-+        getRadio0ObssCoexistenceEnable;;
+-+   "getRadio1ObssCoexistenceEnable")
+-+        getRadio1ObssCoexistenceEnable;;
+-    "getQueryResult")
+-         getQueryResult;;
+-    *) echo "Invalid Argument passed";;
+--- ./userspace/private/apps/wlan/unfnvram/nvram_api.c
++++ ./userspace/private/apps/wlan/unfnvram/nvram_api.c
+@@ -77,7 +77,7 @@
+ #include "bcm_retcodes.h"
+ #include "bcm_ulog.h"
+ 
+-#ifdef BUILD_DISTRIBUTED_MDM
++#if defined(BUILD_DISTRIBUTED_MDM) && !defined(BUILD_RDKWIFI)
+ #include "nvram_zbus_out.h"
+ #endif
+ 
+@@ -198,7 +198,7 @@
+ 
+ 	if (_need_remote() == TRUE)
+ 	{
+-#ifdef BUILD_DISTRIBUTED_MDM
++#if defined(BUILD_DISTRIBUTED_MDM) && !defined(BUILD_RDKWIFI)
+ 		nvram_op_lock();
+ 		ret = nvram_zbus_out_commit();
+ 		nvram_op_unlock();
+@@ -249,7 +249,7 @@
+ 	bcmuLog_perftrace_begin("");
+ 	if (_need_remote() == TRUE)
+ 	{
+-#ifdef BUILD_DISTRIBUTED_MDM
++#if defined(BUILD_DISTRIBUTED_MDM) && !defined(BUILD_RDKWIFI)
+ 		nvram_op_lock();
+ 		bret = nvram_zbus_out_get(name, (char *)&value, sizeof(value));
+ 		ret = (bret == BCMRET_SUCCESS) ? 0 : -1;
+@@ -324,7 +324,7 @@
+ 
+ 	if (_need_remote() == TRUE)
+ 	{
+-#ifdef BUILD_DISTRIBUTED_MDM
++#if defined(BUILD_DISTRIBUTED_MDM) && !defined(BUILD_RDKWIFI)
+ 		nvram_op_lock();
+ 		ret = (nvram_zbus_out_set(name, value) == BCMRET_SUCCESS) ? 0 : -1;
+ 		nvram_op_unlock();
+@@ -483,7 +483,7 @@
+ 
+ 	if (_need_remote() == TRUE)
+ 	{
+-#ifdef BUILD_DISTRIBUTED_MDM
++#if defined(BUILD_DISTRIBUTED_MDM) && !defined(BUILD_RDKWIFI)
+ 		nvram_op_lock();
+ 		ret = nvram_zbus_out_unset(name);
+ 		nvram_op_unlock();
+--- ./userspace/private/apps/wlan/wifi_rdk_initd/Makefile.fullsrc
++++ ./userspace/private/apps/wlan/wifi_rdk_initd/Makefile.fullsrc
+@@ -1,8 +1,7 @@
+ OBJS := wifi_rdk_initd.o
+ 
+ LIBS := -lbcm_comp_md -lmdm_cli $(MDM_CORE_LIBS) -lmdm_cbk_wifi \
+-        -lcms_msg $(CMS_COMMON_LIBS)
+-
++        -lcms_msg $(CMS_COMMON_LIBS) -lframework_cli
+ 
+ CFLAGS+=-DRDK_BUILD
+ 
+--- ./userspace/private/apps/wlan/wlssk/cms.c
++++ ./userspace/private/apps/wlan/wlssk/cms.c
+@@ -435,7 +435,9 @@
+ 	CmsRet ret = CMSRET_SUCCESS;
+ 	SINT32 fd;
+ 	CmsMsgHeader* msg = NULL;
++#ifndef RDK_BUILD
+ 	int rc;
++#endif
+ 
+ 	cmsLog_notice("Entered: isDistributed=%d", isDistributedMdm);
+ 	cmsLog_notice("initializing timers");

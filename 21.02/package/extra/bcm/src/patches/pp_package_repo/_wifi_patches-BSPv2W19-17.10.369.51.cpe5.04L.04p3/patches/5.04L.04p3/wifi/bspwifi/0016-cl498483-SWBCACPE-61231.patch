@@ -1,0 +1,24 @@
+--- ./userspace/private/apps/wlan/wlssk/wlssk.c
++++ ./userspace/private/apps/wlan/wlssk/wlssk.c
+@@ -399,6 +399,8 @@
+ void wlconf_setup(const unsigned char idx)
+ {
+ 	char cmd[CMD_BUF_SIZE];
++	int ret = 0;
++	struct stat file_stat;
+ 
+ 	snprintf(cmd, sizeof(cmd), "wlconf wl%d down", idx);
+ 	DEBUG("[WLCONF]%s\n", cmd);
+@@ -408,7 +410,11 @@
+ 
+ 	snprintf(cmd, sizeof(cmd), "wlconf wl%d up", idx);
+ 	DEBUG("[WLCONF]%s\n", cmd);
+-	bcmSystem(cmd);
++	ret = bcmSystem(cmd);
++	if (ret != 0 && (stat("/tmp/system_reboot_requested", &file_stat) == 0)) {
++		ERROR("wlconf requested system_reboot,quit wlssk!!!!! (%d)", errno);
++		exit(0);
++	}
+ }
+ 
+ void wlconf_start(const unsigned char idx)

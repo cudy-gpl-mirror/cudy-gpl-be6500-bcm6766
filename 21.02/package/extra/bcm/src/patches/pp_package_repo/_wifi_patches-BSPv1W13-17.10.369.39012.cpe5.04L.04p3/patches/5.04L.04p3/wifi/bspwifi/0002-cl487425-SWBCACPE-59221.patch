@@ -1,0 +1,506 @@
+--- ./userspace/private/apps/wlan/scripts/Makefile
++++ ./userspace/private/apps/wlan/scripts/Makefile
+@@ -84,6 +84,7 @@
+ 	@for s in ${SCRIPTS}; do \
+ 	  cat $${s} | \
+ 	    sed -e 's/CONFIG_WLDPDCTL=_set_by_buildFS_/CONFIG_WLDPDCTL=$(BUILD_BCM_WLAN_DPDCTL)/'  \
++	    | sed -e 's/CONFIG_BCM_WLAN_MLO=_set_by_buildFS_/CONFIG_BCM_WLAN_MLO=$(BUILD_BCM_WLMLO)/'  \
+ 	    | sed -e 's/RDK_EDPD_SUPPORT=RDK_EDPD_SUPPORT_HOLDER/RDK_EDPD_SUPPORT=$(WLDPD_SUPPORT)/' \
+ 	    | sed -e 's/IS_RDK_BUILD=RDK_BUILD_HOLDER/IS_RDK_BUILD=$(RDK_BUILD)/'  \
+ 	    | sed -e 's/IS_WRT_BUILD=WRT_BUILD_HOLDER/IS_WRT_BUILD=$(BUILD_BRCM_OPENWRT)/'  \
+--- ./userspace/private/apps/wlan/scripts/wifi.sh
++++ ./userspace/private/apps/wlan/scripts/wifi.sh
+@@ -1,5 +1,6 @@
+ #!/bin/bash
+ CONFIG_WLDPDCTL=_set_by_buildFS_
++CONFIG_BCM_WLAN_MLO=_set_by_buildFS_
+ if [ -d /proc/device-tree/ubus-bus/ ]; then
+   PROC_DT_DIR=/proc/device-tree/ubus-bus
+ else
+@@ -23,6 +24,9 @@
+ readonly DPD_MODE_EDPD=2
+ readonly DPD_EDPD_FILE="/usr/sbin/wifi_dsps.sh"
+ 
++readonly MLC_SYNC=6
++readonly MLC_ACTIVE=19
++
+ #wlan interface power control
+ wledpdmap=0
+ wledpdappupd=1
+@@ -41,6 +45,10 @@
+ #available wlan interface list
+ A_WLIFL=""
+ 
++# MLO Configuration
++wl_mlo_config="-1 -1 -1 -1"
++wl_mlo_mapunit=-1
++
+ #down all wlan mac
+ wl_down()
+ {
+@@ -118,6 +126,171 @@
+   nvram restart
+ }
+ 
++# Get MLO Unit for the given interface
++#
++#  $1: WiFi interface (wlX)
++#
++#  return valid MLO Unit (0/1/2) or -1 (invalid unit)
++function wl_mlo_unit()
++{
++  local ifname=$1
++  local wlunit
++  local mlounit
++  
++  wlunit=$(echo $ifname | cut -d 'l' -f2)
++  mlounit=$(echo $wl_mlo_config |  awk -v N=$((wlunit+1)) '{print $N}')
++
++  if [ -z $mlounit ]; then
++    mlounit=-1
++  fi
++
++  echo $mlounit
++}
++
++# Get MAP Unit
++#
++#  return valid MAP Unit (0/1/2) or -1 (invalid unit)
++function wl_map_unit()
++{
++  local wlunit
++  local mapunit=-1
++  
++  for wlunit in $WLUNIT_LIST; do
++    if [ $(wl_mlo_unit wl$wlunit) = 0 ]; then
++      mapunit=$wlunit
++      break
++    fi
++  done
++
++  echo $mapunit
++}
++
++# Init mlo globals
++#
++#
++function wl_mlo_init()
++{
++  local wlunit
++  local mlounit
++
++  if [ ! -z $CONFIG_BCM_WLAN_MLO ]; then
++    # Initialize MLO Global variables
++    wl_mlo_config=`nvram kget wl_mlo_config`
++    if [ -z "$wl_mlo_config" ]; then
++      wl_mlo_config="-1 -1 -1 -1"
++    fi
++
++    wl_mlo_mapunit=-1
++
++    for wlunit in $WLUNIT_LIST; do
++      mlounit=$(echo $wl_mlo_config |  awk -v N=$((wlunit+1)) '{print $N}')
++      if [ $mlounit -eq 0 ]; then
++        wl_mlo_mapunit=$wlunit
++        break
++      fi
++    done
++  fi
++}
++
++
++# Tear down MLO when interface is MLO capable radio
++#
++#  $1: WiFi interface (wlX)
++#
++function wledpdctl_mlo_down()
++{
++  local ifname=$1
++
++  if [ $(wl_mlo_unit $ifname) != -1 ]; then
++    # Tear down MLO and make links non-MLO
++    wl -i wl$wl_mlo_mapunit mlo_down
++  fi
++}
++
++# Bring up MLO when all MLO capable radios are UP
++#
++#  $1: WiFi interface (wlX)
++#
++function wledpdctl_mlo_up()
++{
++  local ifname=$1
++  local wlunit
++  local all_up=1
++  local mlc_state
++
++  if [ $(wl_mlo_unit $ifname) != -1 ]; then
++    for wlunit in $WLUNIT_LIST; do
++      wlif=wl$wlunit
++      if [ $(wl_mlo_unit $wlif) != -1 ]; then
++        # MLO AP, check if it is powered UP
++        wlif_list=$(ifconfig -a | grep wl | awk '{print $1}' | grep $wlif)
++        dummy=$(ifconfig $wlif | grep NOARP)
++        if [ -z $wlif_list ] || [ ! -z "$dummy" ]; then
++          all_up=0
++          break
++        else
++          # Wait for MLC state to be MLC_SYNC or MLC_ACTIVE
++          for i in $(seq 1 3); do
++            mlc_state=$(wl -i $wlif mlc_state | cut -d ' ' -f1)
++            if [ $mlc_state = $MLC_SYNC ] || [ $mlc_state = $MLC_ACTIVE ]; then
++              break
++            fi
++            sleep 1
++          done
++          if [ $mlc_state != $MLC_SYNC ] && [ $mlc_state != $MLC_ACTIVE ]; then
++            echo "WIFI.SH : WARN: $wlif is not in MLC_SYNC/ACTIVE state"
++          fi
++        fi
++      fi
++    done
++
++    if [ $all_up = 1 ]; then
++      # Make MLO ready and active as all MLO links are up
++      wl -i wl$wl_mlo_mapunit mlo_up
++      wlconf wl$wl_mlo_mapunit configure_mlo
++
++      # Wait for MLC state to be MLC_ACTIVE
++      for i in $(seq 1 30); do
++        mlc_state=$(wl -i $ifname mlc_state | cut -d ' ' -f1)
++        if [ $mlc_state = $MLC_ACTIVE ]; then
++          break
++        fi
++        sleep 1
++      done
++      if [ $mlc_state != $MLC_ACTIVE ]; then
++         echo "WIFI.SH : ERROR: wl$wluint is not in MLC_ACTIVE state"
++      fi
++    fi
++    mlc_state=$(wl -i wl$wl_mlo_mapunit mlc_state | cut -d ' ' -f1)
++    if [ $mlc_state = $MLC_ACTIVE ]; then
++      echo "WIFI.SH : $ifname mlo up Success"
++    fi
++  fi
++}
++
++# WiFi affinity Settings down
++#
++#  $1: WiFi interface (wlX)
++#
++function wledpdctl_wlaffinity_down()
++{
++  # For future usage
++  # wlaffinity save power down
++  echo
++}
++
++# WiFi affinity Settings up
++#
++#  $1: WiFi interface (wlX)
++#
++function wledpdctl_wlaffinity_up()
++{
++  # For future usage
++  # wlaffinity apply power up
++  echo "WIFI.SH : wlaffinity auto"
++  wlaffinity auto >/dev/null
++}
++
+ # Get PCIe domain number for the given interface from EDPD map
+ #
+ # Input:
+@@ -376,17 +549,27 @@
+         # Check if the interface already up and running
+         sts=`cat /proc/interrupts | grep $ifname | cut -d ':' -f1`
+         if [[ -d $SYS_PCIE_DRV_DIR/$pcie_base ]] && [[ ! -z $sts ]]; then
+-          # Turn off all the interfaces of this radio
+-          ifid=$(echo $ifname | cut -d 'l' -f2)
+-          iflist=$(cat /proc/net/dev |grep -e $ifname -e wds$ifid | cut -d ':' -f1)
+-          for iface in $iflist; do
+-            wl -i $iface hwa_rxpost_reclaim_en 1
+-            ifconfig $iface down
+-            wl -i $iface down
+-          done
+           [[ -z $IS_RDK_BUILD ]] && [[ $wledpdappupd != 0 ]] && \
+               ACTION=pwrdn /etc/init.d/mdev_wl.sh $ifname
+ 
++          # Wait until all services are down before doing anything with PCIe
++          hapd_state=$(hostapd_cli interface | grep ^${ifname})
++          if [ ! -z $hapd_state ]; then
++            # Interface exists
++            for i in $(seq 1 10); do
++              hapd_state=$(hostapd_cli -i $ifname status | grep state | cut -d '=' -f2)
++              if [ "$hapd_state" = "DISABLED" ]; then
++                break
++              fi
++              sleep 1
++            done
++          fi
++          if [ "$hapd_state" != "DISABLED" ]; then
++            echo "WIFI.SH : WARN - $ifname hostapd not down, state $hapd_state"
++          fi
++
++          # Save affinity (if any)
++          wledpdctl_wlaffinity_down $ifname
+ 
+           # Unbind the PCIe and wlX interface
+           echo $pcie_base > ${SYS_PCIE_DRV_DIR}/unbind
+@@ -437,6 +620,10 @@
+           # Bind the PCIe and wlX interface
+           echo $pcie_base > $SYS_PCIE_DRV_DIR/bind
+           sleep 2
++
++          # Restore back affinity
++          wledpdctl_wlaffinity_up $ifname
++
+           [[ -n $IS_RDK_BUILD  ]] && nvram unset ${ifname}_edpd_radio
+           [[ -z $IS_RDK_BUILD ]] && [[ $wledpdappupd != 0 ]] && \
+               ACTION=pwrup /etc/init.d/mdev_wl.sh $ifname
+@@ -554,6 +741,8 @@
+ # - initialize wlan interface to pcie apon setting (if not done)
+ wldpdctl_init()
+ {
++  wl_mlo_init
++
+   wldpdmode=$(wldpdctl_mode)
+ 
+   if [ $wldpdmode != $DPD_MODE_OFF ]; then
+@@ -754,7 +943,7 @@
+ 
+   echo
+   echo "***********************"
+-  echo "| Mode  |     $(wldpdctl_modestr $wldpdmode)    |"
++  echo "| Mode  |   $(wldpdctl_modestr $wldpdmode)  |"
+   echo "***********************"
+   echo "| intf  | cfg | pwrdn |"
+   echo "***********************"
+@@ -890,15 +1079,19 @@
+   case $mode in
+ 
+     $DPD_MODE_OFF)
+-      modestr="OFF "
++      modestr="OFF     "
+       ;;
+ 
+     $DPD_MODE_DPD)
+-      modestr="DPD "
++      modestr="DPD     "
+       ;;
+ 
+     $DPD_MODE_EDPD)
+-      modestr="EDPD"
++      if [ $wl_mlo_mapunit != -1 ]; then
++        modestr="EDPD_MLO"
++      else
++        modestr="EDPD    "
++      fi
+       ;;
+ 
+     *)
+@@ -928,6 +1121,8 @@
+     echo "         edpddn     <wlan interface>  [apps update]"
+     echo "         edpdbind   <wlan interface>"
+     echo "         edpdunbind <wlan interface>"
++    echo "         edpdmloup  <wlan interface>"
++    echo "         edpdmlodn  <wlan interface>"
+ }
+ 
+ case $1 in
+@@ -1058,8 +1253,33 @@
+     fi
+     ;;
+ 
++  edpdmloup)
++    upintf=$2
++    wldpdctl_init
++    if [ -z $upintf ]; then
++      wl_usage
++    elif [ $wl_mlo_mapunit != -1 ]; then
++      wledpdctl_mlo_up $upintf
++    else
++      echo "Not permitted in non-MLO Mode - $(wldpdctl_modestr $wldpdmode)"
++    fi
++    ;;
++
++  edpdmlodn)
++    dnintf=$2
++    wldpdctl_init
++    if [ -z $dnintf ]; then
++      wl_usage
++    elif [ $wl_mlo_mapunit != -1 ]; then
++      wledpdctl_mlo_down $dnintf
++    else
++      echo "Not permitted in non-MLO Mode - $(wldpdctl_modestr $wldpdmode)"
++    fi
++    ;;
++
+   dpdmode)
+     correct=$2
++    wl_mlo_init
+     wldpdmode=$(wldpdctl_mode $correct)
+ 
+     echo "$wldpdmode | $(wldpdctl_modestr $wldpdmode)"
+--- ./userspace/private/apps/wlan/wldpdlib/wldpd.c
++++ ./userspace/private/apps/wlan/wldpdlib/wldpd.c
+@@ -48,6 +48,7 @@
+ ************************************************************************/
+ #include <string.h>
+ #include <errno.h>
++#include <ifaddrs.h>
+ #include <sys/time.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
+@@ -155,7 +156,7 @@
+ 	return mode;
+ }
+ 
+-/* Set DPD radio interface mode into nvam */
++/* Set DPD radio interface mode into nvram */
+ static inline void wldpd_radio_mode_set(unsigned char idx, char mode)
+ {
+ 	char nvname[NVNAME_SIZE];
+@@ -210,7 +211,7 @@
+ 	unsigned char pwrdn = 0;
+ 
+ 	if (wldpd_radio_disabled(idx) &&
+-			(wldpd_radio_mode(idx) != WLDPD_RADIO_MODE_BIND)) {
++		(wldpd_radio_mode(idx) != WLDPD_RADIO_MODE_BIND)) {
+ 		/* Configured to be power down and not in bind mode */
+ 		pwrdn = 1;
+ 	}
+@@ -233,7 +234,7 @@
+ 	FILE *fp;
+ 
+ 	snprintf(cmd, CMD_BUF_SIZE, "%s dpdmode | cut -d '|' -f1",
+-			WLDPD_SCRIPT_FILE);
++		WLDPD_SCRIPT_FILE);
+ 	if ((fp = popen(cmd, "r")) != NULL) {
+ 		if (fgets(buf, CMD_BUF_SIZE, fp) != NULL) {
+ 			mode = atoi(buf);
+@@ -299,7 +300,8 @@
+ 				idx);
+ 		if ((fp = popen(cmd, "r")) != NULL) {
+ 			if (fgets(buf, CMD_BUF_SIZE, fp) != NULL) {
+-				if (strstr(buf, "state") != NULL) {
++				if ((strstr(buf, "ENABLED") != NULL) ||
++					strstr(buf, "DFS") != NULL) {
+ 					up = 1;
+ 				}
+ 			}
+@@ -421,6 +423,12 @@
+ 
+ 	WLDPD_LOG(" %s\n", __FUNCTION__);
+ 
++	/* Bring up MLO (if not done before) */
++	snprintf(cmd, sizeof(cmd), "sh %s edpdmloup wl%d", WLDPD_SCRIPT_FILE, idx);
++	if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++		WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++	}
++
+ 	/*
+ 	 * Go through all interfaces and power down the interfaces that were
+ 	 * kept in disabled mode during pre-init
+@@ -512,11 +520,22 @@
+ 
+ #if  defined(CONFIG_HOSTAPD) && !defined(BCA_CPEROUTER_RDKWIFI)
+ 		/* Add radio interface from hostapd */
+-		if ((rc = start_hapd_wpasupp_per_radio(radio_idx)) != 0) {
+-			WLDPD_ERROR("start_hapd_radio<%d> failed with rc=%d", radio_idx, rc);
++		snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s enable 2>/dev/null",
++			ifname);
++		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+ 		}
++
++		wldpd_services_ready(radio_idx);
++
+ #endif /* !BCA_CPEROUTER_RDKWIFI && CONFIG_HOSTAPD */
+ 
++		snprintf(cmd, sizeof(cmd), "sh %s edpdmloup wl%d", WLDPD_SCRIPT_FILE,
++			radio_idx);
++		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		}
++
+ 		return 0;
+ 	}
+ 
+@@ -525,6 +544,13 @@
+ 
+ 		WLDPD_LOG(" %s: %s %s\n", __FUNCTION__, ifname, action);
+ 
++		/* First down MLO if applicable */
++		snprintf(cmd, sizeof(cmd), "sh %s edpdmlodn wl%d", WLDPD_SCRIPT_FILE,
++			radio_idx);
++		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		}
++
+ 		/*
+ 		 * Store ACS mode, so it can be used later during power up
+ 		 *
+@@ -553,10 +579,46 @@
+ 		}
+ 
+ #ifndef BCA_CPEROUTER_RDKWIFI
+-		/* set wl hwa_rxpost_reclaim_en */
+-		snprintf(cmd, sizeof(cmd), "wl -i %s hwa_rxpost_reclaim_en 1 2>/dev/null", ifname);
+-		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		{
++			struct ifaddrs *ifaddr, *ifa;
++			char *ifa_name;
++			char wdsifname[IFNAME_LENGTH] = {0};
++
++			if (getifaddrs(&ifaddr) == 0) {
++
++				snprintf(wdsifname, sizeof(wdsifname), "wds%d", radio_idx);
++				for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
++					if ((ifa->ifa_addr == NULL) ||
++						(ifa->ifa_addr->sa_family != AF_PACKET)) {
++						continue;
++					}
++
++					ifa_name = ifa->ifa_name;
++					if ((strstr(ifa_name, ifname) != ifa_name) &&
++						(strstr(ifa_name, wdsifname) != ifa_name)) {
++						continue;
++					}
++					snprintf(cmd, sizeof(cmd),
++						"wl -i %s hwa_rxpost_reclaim_en 1 2>/dev/null",
++						ifa_name);
++					if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++						WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++					}
++
++					snprintf(cmd, sizeof(cmd), "ifconfig %s down 2>/dev/null",
++						ifa_name);
++					if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++						WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++					}
++
++					snprintf(cmd, sizeof(cmd), "wl -i %s down 2>/dev/null",
++						ifa_name);
++					if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++						WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++					}
++				}
++				freeifaddrs(ifaddr);
++			}
+ 		}
+ 
+ 		/* down wlconf */
+@@ -573,7 +635,11 @@
+ 
+ #ifdef CONFIG_HOSTAPD
+ 		/* Remove radio interface from hostapd */
+-		stop_hapd_wpasupp_per_radio(radio_idx);
++		snprintf(cmd, sizeof(cmd), "hostapd_cli -i %s disable 2>/dev/null",
++			ifname);
++		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		}
+ #endif
+ #endif /* BCA_CPEROUTER_RDKWIFI */
+ 		return 0;

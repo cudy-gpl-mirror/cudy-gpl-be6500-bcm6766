@@ -1,0 +1,24 @@
+Source: prelink
+Section: admin
+Priority: optional
+Maintainer: Debian QA Group <packages@qa.debian.org>
+Build-Depends: debhelper (>= 6.0.7~), libelfg0-dev, libpopt-dev, libselinux1-dev [linux-any], dh-autoreconf
+Standards-Version: 3.8.1.0
+
+Package: prelink
+Architecture: any 
+Depends: ${shlibs:Depends}, ${misc:Depends}, execstack
+Description: ELF prelinking utility to speed up dynamic linking
+ The prelink package contains a utility which modifies ELF shared libraries
+ and executables, so that far fewer relocations need to be resolved at
+ runtime and thus programs come up faster.
+
+Package: execstack
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Conflicts: prelink (<< 0.0.20090311-2)
+Replaces: prelink
+Description: ELF GNU_STACK program header editing utility
+ The execstack package contains a utility which modifies (or adds) the
+ GNU_STACK program header to ELF binaries, and allows changing the executable
+ flag.

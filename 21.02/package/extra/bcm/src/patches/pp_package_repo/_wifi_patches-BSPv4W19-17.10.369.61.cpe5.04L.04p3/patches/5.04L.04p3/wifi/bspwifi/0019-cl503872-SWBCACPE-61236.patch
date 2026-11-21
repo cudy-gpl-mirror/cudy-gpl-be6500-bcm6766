@@ -1,0 +1,74 @@
+--- ./userspace/private/apps/wlan/scripts/wifi.sh
++++ ./userspace/private/apps/wlan/scripts/wifi.sh
+@@ -656,8 +656,12 @@
+           # Save affinity (if any)
+           wledpdctl_wlaffinity_down $ifname
+ 
+-          # Unbind the PCIe and wlX interface
+-          echo $pcie_base > ${SYS_PCIE_DRV_DIR}/unbind
++          # recheck interface exists again as it may has already been 
++          # unbinded in RDKB case
++          if [[ -d $SYS_PCIE_DRV_DIR/$pcie_base ]]; then
++              # Unbind the PCIe and wlX interface
++              echo $pcie_base > ${SYS_PCIE_DRV_DIR}/unbind
++          fi
+ 
+           # Create dummy interface for DPD
+           wledpdctl_dummy_if $ifname add
+--- ./userspace/private/apps/wlan/wldpdlib/wldpd.c
++++ ./userspace/private/apps/wlan/wldpdlib/wldpd.c
+@@ -538,7 +538,6 @@
+ 			WLDPD_ERROR("%s: invalid acs_mode %c", ifname, acs_mode);
+ 		}
+ 
+-#if  defined(CONFIG_HOSTAPD) && !defined(BCA_CPEROUTER_RDKWIFI)
+ 		/* Add radio interface from hostapd */
+ 		if (dpd_mode == WLDPD_MODE_EDPD_MLO) {
+ 
+@@ -547,8 +546,21 @@
+ 			if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+ 				WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+ 			}
++#ifdef BCA_CPEROUTER_RDK
++			/* if mlo is already up, hostapd_cli -i wlx enable will bringdown
++			 * mlo for unknown reason, so need to forceup to bring it up.
++			 */
++			for (int i = 0; i < act_wl_cnt; i++) {
++				snprintf(cmd, sizeof(cmd), "wlconf  wl%d forceup", i);
++				WLDPD_ERROR("RUN%s: ", cmd);
++				wldpd_runsyscmd(cmd);
++			}
++#endif /* BCA_CPEROUTER_RDK */
+ 			wldpd_services_ready(radio_idx);
+-		} else {
++		}
++
++#if  defined(CONFIG_HOSTAPD) && !defined(BCA_CPEROUTER_RDKWIFI)
++		else {
+ 			if ((rc = start_hapd_wpasupp_per_radio(radio_idx)) != 0) {
+ 				WLDPD_ERROR("start_hapd_radio<%d> failed with rc=%d",
+ 					radio_idx, rc);
+@@ -608,7 +620,6 @@
+ 			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+ 		}
+ 
+-#ifndef BCA_CPEROUTER_RDKWIFI
+ 		/* down wlconf */
+ 		snprintf(cmd, sizeof(cmd), "wlconf %s down 2>/dev/null", ifname);
+ 		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+@@ -660,11 +671,13 @@
+ 			if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+ 				WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+ 			}
+-		} else {
++		}
++#if !defined(BCA_CPEROUTER_RDKWIFI)
++		else {
+ 			stop_hapd_wpasupp_per_radio(radio_idx);
+ 		}
+-#endif /* CONFIG_HOSTAPD */
+ #endif /* BCA_CPEROUTER_RDKWIFI */
++#endif /* CONFIG_HOSTAPD */
+ 		return 0;
+ 	}
+ #endif /* BUILD_BCM_WLAN_DPDCTL */

@@ -1,0 +1,10 @@
+--- ./bcmdrivers/broadcom/net/wl/shared/impl1/wl_nbuff.c
++++ ./bcmdrivers/broadcom/net/wl/shared/impl1/wl_nbuff.c
+@@ -490,7 +490,6 @@
+ 		}
+ 
+ 		if (ret < 0) {
+-			printk("%s: MPM Databuffer alloc failed. ret %d\n", __FUNCTION__, ret);
+ 			goto done;
+ 		}
+ 

@@ -1,0 +1,17 @@
+--- # YAML format
+reference: '$File: //depot/CommEngine/patches/CustomBranches/Cudy/5.04L.04_P3/patch.version $'
+version: '5'
+release: '04'
+extraversion: '04p3'
+
+platforms_in_use:
+# one row per platform starting with hiphen+space e.g. - 63138
+- 6764
+- 6766
+
+patches:
+# one row per patch starting with hiphen+space e.g.:
+- {csp: CS00012355885, ref: SWBCACPE-61941, chg: CL505722} # update BCM6766/6765/6764 PMC firmware and BCM thermal driver
+- {csp: CS00012371316, ref: SWBCACPE-XXXXX, chg: CL521948} # (JIRA list not included) Performance enhancement patch to go with 23.2.1/2 WLAN driver release
+- {csp: CS00012371316, ref: SWBCACPE-61512, chg: CL523127} # better spc aggregation for 6764
+- {csp: CS00012378421, ref: SWBCACPE-61013, chg: CL527701} # fix 2.5G-USXGMII at 1G causes MAC Rx counter to lock up

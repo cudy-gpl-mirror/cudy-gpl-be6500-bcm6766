@@ -1,0 +1,44 @@
+--- ./userspace/private/apps/wlan/wldpdlib/wldpd.c
++++ ./userspace/private/apps/wlan/wldpdlib/wldpd.c
+@@ -609,6 +609,12 @@
+ 		}
+ 
+ #ifndef BCA_CPEROUTER_RDKWIFI
++		/* down wlconf */
++		snprintf(cmd, sizeof(cmd), "wlconf %s down 2>/dev/null", ifname);
++		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
++			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
++		}
++
+ 		{
+ 			struct ifaddrs *ifaddr, *ifa;
+ 			char *ifa_name;
+@@ -641,28 +647,11 @@
+ 						WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+ 					}
+ 
+-					snprintf(cmd, sizeof(cmd), "wl -i %s down 2>/dev/null",
+-						ifa_name);
+-					if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-						WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+-					}
+ 				}
+ 				freeifaddrs(ifaddr);
+ 			}
+ 		}
+ 
+-		/* down wlconf */
+-		snprintf(cmd, sizeof(cmd), "wlconf %s down 2>/dev/null", ifname);
+-		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+-		}
+-
+-		/* down network interfacce */
+-		snprintf(cmd, sizeof(cmd), "ifconfig %s down 2>/dev/null", ifname);
+-		if ((rc = wldpd_runsyscmd(cmd)) < 0) {
+-			WLDPD_ERROR("cmd<%s> failed with rc=%d", cmd, rc);
+-		}
+-
+ #ifdef CONFIG_HOSTAPD
+ 		/* Remove radio interface from hostapd */
+ 		if (dpd_mode == WLDPD_MODE_EDPD_MLO) {

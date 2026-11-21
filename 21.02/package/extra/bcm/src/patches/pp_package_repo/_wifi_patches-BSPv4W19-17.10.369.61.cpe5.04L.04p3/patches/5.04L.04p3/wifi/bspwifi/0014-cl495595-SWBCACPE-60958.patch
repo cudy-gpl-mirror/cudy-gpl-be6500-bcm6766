@@ -1,0 +1,11 @@
+--- ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-kernel/linux/bcalinux_4.19.bbappend
++++ ./userspace/private/apps/wlan/rdk/meta-wifi/recipes-kernel/linux/bcalinux_4.19.bbappend
+@@ -60,6 +60,8 @@
+         install_file ${TARGET_FS_INSTALL_ROOT}/bin/wifi_rdk_initd ${D}/${base_bindir}/wifi_rdk_initd
+         install_file ${TARGET_FS_INSTALL_ROOT}/bin/wifihal_test ${D}/${base_bindir}/wifihal_test
+         install_file ${TARGET_FS_INSTALL_ROOT}/bin/wlaffinity ${D}/${base_bindir}/wlaffinity
++        install_file ${TARGET_FS_INSTALL_ROOT}/bin/rtpolicy ${D}/${base_bindir}/rtpolicy
++        install_file ${TARGET_FS_INSTALL_ROOT}/bin/rtpolicy_bg ${D}/${base_bindir}/rtpolicy_bg
+         install_file ${TARGET_FS_INSTALL_ROOT}/bin/wlctl ${D}/${base_bindir}/wlctl
+         install_file ${TARGET_FS_INSTALL_ROOT}/bin/wlssk ${D}/${base_bindir}/wlssk
+         install_file ${TARGET_FS_INSTALL_ROOT}/etc/init.d/bcm-wlan-drivers.sh ${D}/etc/init.d/bcm-wlan-drivers.sh
